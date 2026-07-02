@@ -256,7 +256,7 @@ def main():
         return
 
     from anylabeling.views.mainwindow import MainWindow
-    from anylabeling.views.labeling.logger import logger
+    from anylabeling.views.labeling.logger import logger, LOG_FILE
     from anylabeling.views.labeling.utils import new_icon, gradient_text
     from anylabeling.views.labeling.utils.theme import (
         init_theme,
@@ -311,6 +311,10 @@ def main():
         f"🚀 {gradient_text(f'X-AnyLabeling v{__version__} launched!')}"
     )
     logger.info(f"⭐ If you like it, give us a star: {__url__}")
+    logger.info(
+        f"📝 Debug logs (always DEBUG level, with tracebacks) are saved to: "
+        f"{LOG_FILE}"
+    )
     if qt_platform:
         os.environ["QT_QPA_PLATFORM"] = qt_platform
         logger.info(f"🖥️ Using Qt platform: {qt_platform}")
