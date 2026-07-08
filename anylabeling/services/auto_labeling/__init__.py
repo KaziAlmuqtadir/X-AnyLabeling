@@ -10,6 +10,7 @@ _CUSTOM_MODELS = [
     "sam_med2d",
     "sam_hq",
     "yolov5",
+    "yolo_fastestv2",
     "yolov6",
     "yolov7",
     "yolov8",

@@ -216,7 +216,8 @@ class ModelManager(QObject):
         except Exception as e:
             logger.error(
                 "An error occurred while loading the custom model: "
-                "The config file is invalid."
+                f"The config file is invalid: {e}",
+                exc_info=True,
             )
             self.new_model_status.emit(
                 self.tr("Error in loading custom model: Invalid config file.")
@@ -247,7 +248,8 @@ class ModelManager(QObject):
             else:
                 logger.error(
                     "An error occurred while loading the custom model: "
-                    "The model type {model_config['type']} is not supported."
+                    f"The model type '{model_config['type']}' is not supported. "
+                    f"Supported types: {sorted(_CUSTOM_MODELS)}"
                 )
             self.new_model_status.emit(
                 self.tr(
@@ -405,7 +407,29 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
+                )
+                return
+        elif model_config["type"] == "yolo_fastestv2":
+            from .yolo_fastestv2 import YoloFastestV2
+
+            try:
+                model_config["model"] = YoloFastestV2(
+                    model_config, on_message=self.new_model_status.emit
+                )
+                self.auto_segmentation_model_unselected.emit()
+                logger.info(
+                    f"✅ Model loaded successfully: {model_config['type']}"
+                )
+            except Exception as e:  # noqa
+                template = "Error in loading model: {error_message}"
+                translated_template = self.tr(template)
+                error_text = translated_template.format(error_message=str(e))
+                self.new_model_status.emit(error_text)
+                logger.error(
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolov6":
@@ -425,7 +449,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolov7":
@@ -445,7 +470,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolov5_sahi":
@@ -465,7 +491,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolov8_sahi":
@@ -485,7 +512,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolo26_sahi":
@@ -505,7 +533,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolo11_sahi":
@@ -525,7 +554,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolov8":
@@ -545,7 +575,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolov9":
@@ -565,7 +596,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolov10":
@@ -585,7 +617,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolo11":
@@ -605,7 +638,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolow":
@@ -625,7 +659,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolov5_seg":
@@ -645,7 +680,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolov5_ram":
@@ -665,7 +701,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolow_ram":
@@ -685,7 +722,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolov8_seg":
@@ -705,7 +743,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolo11_seg":
@@ -725,7 +764,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolov8_obb":
@@ -745,7 +785,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolo11_obb":
@@ -765,7 +806,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolov8_pose":
@@ -785,7 +827,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolo11_pose":
@@ -805,7 +848,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolox":
@@ -825,7 +869,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolo_nas":
@@ -845,7 +890,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "damo_yolo":
@@ -865,7 +911,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "gold_yolo":
@@ -885,7 +932,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "grounding_dino":
@@ -905,7 +953,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "grounding_dino_api":
@@ -925,7 +974,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "ram":
@@ -945,7 +995,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "internimage_cls":
@@ -965,7 +1016,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "pulc_attribute":
@@ -985,7 +1037,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolov5_sam":
@@ -1001,7 +1054,8 @@ class ModelManager(QObject):
                 )
             except Exception as e:  # noqa
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 template = "Error in loading model: {error_message}"
                 translated_template = self.tr(template)
@@ -1023,7 +1077,8 @@ class ModelManager(QObject):
                 )
             except Exception as e:  # noqa
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 template = "Error in loading model: {error_message}"
                 translated_template = self.tr(template)
@@ -1045,7 +1100,8 @@ class ModelManager(QObject):
                 )
             except Exception as e:  # noqa
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 template = "Error in loading model: {error_message}"
                 translated_template = self.tr(template)
@@ -1067,7 +1123,8 @@ class ModelManager(QObject):
                 )
             except Exception as e:  # noqa
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 template = "Error in loading model: {error_message}"
                 translated_template = self.tr(template)
@@ -1089,7 +1146,8 @@ class ModelManager(QObject):
                 )
             except Exception as e:  # noqa
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 template = "Error in loading model: {error_message}"
                 translated_template = self.tr(template)
@@ -1111,7 +1169,8 @@ class ModelManager(QObject):
                 )
             except Exception as e:  # noqa
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 template = "Error in loading model: {error_message}"
                 translated_template = self.tr(template)
@@ -1135,7 +1194,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "segment_anything":
@@ -1151,7 +1211,8 @@ class ModelManager(QObject):
                 )
             except Exception as e:  # noqa
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 template = "Error in loading model: {error_message}"
                 translated_template = self.tr(template)
@@ -1173,7 +1234,8 @@ class ModelManager(QObject):
                 )
             except Exception as e:  # noqa
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 template = "Error in loading model: {error_message}"
                 translated_template = self.tr(template)
@@ -1196,7 +1258,8 @@ class ModelManager(QObject):
             except Exception as e:  # noqa
                 logger.error(
                     f"❌ Error in loading model: {model_config['type']} "
-                    f"with error: {str(e)}"
+                    f"with error: {str(e)}",
+                    exc_info=True,
                 )
                 template = "Error in loading model: {error_message}"
                 translated_template = self.tr(template)
@@ -1216,7 +1279,8 @@ class ModelManager(QObject):
                 )
             except Exception as e:  # noqa
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 template = "Error in loading model: {error_message}"
                 translated_template = self.tr(template)
@@ -1238,7 +1302,8 @@ class ModelManager(QObject):
                 )
             except Exception as e:  # noqa
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 template = "Error in loading model: {error_message}"
                 translated_template = self.tr(template)
@@ -1260,7 +1325,8 @@ class ModelManager(QObject):
                 )
             except Exception as e:  # noqa
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 template = "Error in loading model: {error_message}"
                 translated_template = self.tr(template)
@@ -1282,7 +1348,8 @@ class ModelManager(QObject):
                 )
             except Exception as e:  # noqa
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 template = "Error in loading model: {error_message}"
                 translated_template = self.tr(template)
@@ -1304,7 +1371,8 @@ class ModelManager(QObject):
                 )
             except Exception as e:  # noqa
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 template = "Error in loading model: {error_message}"
                 translated_template = self.tr(template)
@@ -1330,7 +1398,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "rtdetr":
@@ -1350,7 +1419,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "rtdetrv2":
@@ -1370,7 +1440,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "deimv2":
@@ -1390,7 +1461,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolov6_face":
@@ -1410,7 +1482,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "scrfd":
@@ -1430,7 +1503,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolox_dwpose":
@@ -1450,7 +1524,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "rtmdet_pose":
@@ -1470,7 +1545,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "clrnet":
@@ -1490,7 +1566,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "ppocr_v4":
@@ -1510,7 +1587,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "ppocr_v5":
@@ -1530,7 +1608,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "ppocr_v6":
@@ -1550,7 +1629,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolov5_cls":
@@ -1570,7 +1650,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolov5_car_plate":
@@ -1590,7 +1671,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolov8_cls":
@@ -1610,7 +1692,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolo11_cls":
@@ -1630,7 +1713,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolov5_det_track":
@@ -1650,7 +1734,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolov8_det_track":
@@ -1670,7 +1755,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolo11_det_track":
@@ -1690,7 +1776,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolov8_seg_track":
@@ -1710,7 +1797,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolo11_seg_track":
@@ -1730,7 +1818,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolov8_obb_track":
@@ -1750,7 +1839,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolo11_obb_track":
@@ -1770,7 +1860,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolov8_pose_track":
@@ -1790,7 +1881,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolo11_pose_track":
@@ -1810,7 +1902,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolo26_det_track":
@@ -1830,7 +1923,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolo26_seg_track":
@@ -1850,7 +1944,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolo26_obb_track":
@@ -1870,7 +1965,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolo26_pose_track":
@@ -1890,7 +1986,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "rmbg":
@@ -1910,7 +2007,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "depth_anything":
@@ -1930,7 +2028,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "depth_anything_v2":
@@ -1950,7 +2049,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "upn":
@@ -1970,7 +2070,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "remote_server":
@@ -1991,7 +2092,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "florence2":
@@ -2020,7 +2122,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model `{model_config['type']}` with error: {str(e)}"
+                    f"❌ Error in loading model `{model_config['type']}` with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "geco":
@@ -2049,7 +2152,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model `{model_config['type']}` with error: {str(e)}"
+                    f"❌ Error in loading model `{model_config['type']}` with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "rfdetr":
@@ -2069,7 +2173,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "rfdetr_seg":
@@ -2089,7 +2194,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "dfine":
@@ -2109,7 +2215,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolo12":
@@ -2129,7 +2236,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolo26":
@@ -2149,7 +2257,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolo26_seg":
@@ -2169,7 +2278,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolo26_obb":
@@ -2189,7 +2299,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yolo26_pose":
@@ -2209,7 +2320,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "yoloe":
@@ -2229,7 +2341,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         elif model_config["type"] == "u_rtdetr":
@@ -2249,7 +2362,8 @@ class ModelManager(QObject):
                 error_text = translated_template.format(error_message=str(e))
                 self.new_model_status.emit(error_text)
                 logger.error(
-                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
+                    exc_info=True,
                 )
                 return
         else:
@@ -2406,7 +2520,7 @@ class ModelManager(QObject):
                 )
 
         except Exception as e:  # noqa
-            logger.error(f"Error in predict_shapes: {e}")
+            logger.error(f"Error in predict_shapes: {e}", exc_info=True)
             template = "Error in model prediction: {error_message}"
             translated_template = self.tr(template)
             error_text = translated_template.format(error_message=str(e))
