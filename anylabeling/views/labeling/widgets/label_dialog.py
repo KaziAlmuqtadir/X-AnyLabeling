@@ -1476,7 +1476,7 @@ class LabelDialog(QtWidgets.QDialog):
             if (
                 isinstance(linking_pairs, list)
                 and len(linking_pairs) == 2
-                and all(isinstance(item, int) for item in linking_pairs)
+                and all(type(item) is int for item in linking_pairs)
             ):
                 if linking_pairs in self.get_kie_linking():
                     QtWidgets.QMessageBox.warning(
@@ -1484,7 +1484,10 @@ class LabelDialog(QtWidgets.QDialog):
                         self.tr("Duplicate Entry"),
                         self.tr("This linking pair already exists."),
                     )
-                self.linking_list.addItem(str(linking_pairs))
+                    return
+                item = QtWidgets.QListWidgetItem(str(linking_pairs))
+                item.setData(Qt.ItemDataRole.UserRole, linking_pairs)
+                self.linking_list.addItem(item)
                 self.linking_input.clear()
                 self.linking_list.setHidden(
                     False
@@ -1520,9 +1523,15 @@ class LabelDialog(QtWidgets.QDialog):
         if kie_linking is None:
             kie_linking = []
         self.linking_list.clear()
+        unique_pairs = []
         for linking_pair in kie_linking:
-            self.linking_list.addItem(str(linking_pair))
-        self.linking_list.setHidden(False if kie_linking else True)
+            if linking_pair in unique_pairs:
+                continue
+            unique_pairs.append(linking_pair)
+            item = QtWidgets.QListWidgetItem(str(linking_pair))
+            item.setData(Qt.ItemDataRole.UserRole, linking_pair)
+            self.linking_list.addItem(item)
+        self.linking_list.setHidden(False if unique_pairs else True)
 
     def get_last_label(self):
         return self._last_label
@@ -1656,7 +1665,7 @@ class LabelDialog(QtWidgets.QDialog):
         kie_linking = []
         for index in range(self.linking_list.count()):
             item = self.linking_list.item(index)
-            kie_linking.append(eval(item.text()))
+            kie_linking.append(item.data(Qt.ItemDataRole.UserRole))
         return kie_linking
 
     def pop_up(

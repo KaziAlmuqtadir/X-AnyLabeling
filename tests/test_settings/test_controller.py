@@ -88,10 +88,47 @@ class TestSettingsController(unittest.TestCase):
                 "qt_image_allocation_limit", -1, schedule_save=False
             )
 
+    def test_font_family_accepts_system_default_and_family_name(self):
+        self.assertIsNone(self.controller.get_value("font_family"))
+
+        changed = self.controller.update_field(
+            "font_family", "  DejaVu Sans  ", schedule_save=False
+        )
+        self.assertTrue(changed)
+        self.assertEqual(
+            self.controller.get_value("font_family"), "DejaVu Sans"
+        )
+
+        changed = self.controller.update_field(
+            "font_family", None, schedule_save=False
+        )
+        self.assertTrue(changed)
+        self.assertIsNone(self.controller.get_value("font_family"))
+
+        with self.assertRaises(SettingsValidationError):
+            self.controller.update_field(
+                "font_family", 10, schedule_save=False
+            )
+
     def test_canvas_field_validation(self):
+        self.assertEqual(
+            self.controller.get_value("canvas.label_font_size"), 8
+        )
+        self.controller.update_field(
+            "canvas.label_font_size", 12, schedule_save=False
+        )
+        with self.assertRaises(SettingsValidationError):
+            self.controller.update_field(
+                "canvas.label_font_size", 5, schedule_save=False
+            )
+        with self.assertRaises(SettingsValidationError):
+            self.controller.update_field(
+                "canvas.label_font_size", 49, schedule_save=False
+            )
+
         self.controller.update_field(
             "canvas.crosshair.width",
-            1.0,
+            0.5,
             schedule_save=False,
         )
         self.controller.update_field(
@@ -102,7 +139,7 @@ class TestSettingsController(unittest.TestCase):
         with self.assertRaises(SettingsValidationError):
             self.controller.update_field(
                 "canvas.crosshair.width",
-                0.5,
+                0.4,
                 schedule_save=False,
             )
 
@@ -193,6 +230,18 @@ class TestSettingsController(unittest.TestCase):
 
     def test_shape_field_validation(self):
         self.controller.update_field(
+            "shape.line_width",
+            0.5,
+            schedule_save=False,
+        )
+        with self.assertRaises(SettingsValidationError):
+            self.controller.update_field(
+                "shape.line_width",
+                0.4,
+                schedule_save=False,
+            )
+
+        self.controller.update_field(
             "shape_color",
             None,
             schedule_save=False,
@@ -254,6 +303,10 @@ class TestSettingsController(unittest.TestCase):
             )
 
     def test_shortcut_conflict_and_whitelist(self):
+        self.assertEqual(
+            self.controller.get_value("shortcuts.toggle_image_tags"),
+            "Ctrl+Shift+T",
+        )
         with self.assertRaises(SettingsValidationError) as ctx:
             self.controller.update_field(
                 "shortcuts.open",
@@ -281,6 +334,13 @@ class TestSettingsController(unittest.TestCase):
             self.controller.get_value("shortcuts.undo_last_point"),
             "Ctrl+Z",
         )
+
+        with self.assertRaises(SettingsValidationError):
+            self.controller.update_field(
+                "shortcuts.toggle_image_tags",
+                "Ctrl+T",
+                schedule_save=False,
+            )
 
     def test_shortcut_clear_behavior(self):
         changed = self.controller.update_field(
@@ -395,6 +455,36 @@ class TestSettingsController(unittest.TestCase):
         self.assertEqual(controller.get_value("canvas.epsilon"), 13.5)
         self.assertEqual(controller.last_saved_keys, ["canvas.epsilon"])
         self.assertIn(("canvas.epsilon", 13.5), applied)
+        self.assertEqual(len(saved), 1)
+
+    def test_deferred_width_preview_reverts_or_persists(self):
+        config = copy.deepcopy(load_template_config())
+        applied = []
+        saved = []
+        controller = SettingsController(
+            config=config,
+            apply_callback=lambda key, value: applied.append((key, value)),
+            save_callback=lambda payload: saved.append(copy.deepcopy(payload))
+            or True,
+            defer_runtime_apply=True,
+            preview_keys={"shape.line_width", "canvas.crosshair.width"},
+        )
+
+        original_line_width = config["shape"]["line_width"]
+        controller.update_field("shape.line_width", 0.5, schedule_save=False)
+        self.assertEqual(applied[-1], ("shape.line_width", 0.5))
+        self.assertEqual(config["shape"]["line_width"], original_line_width)
+
+        controller.discard_changes()
+        self.assertEqual(
+            applied[-1], ("shape.line_width", original_line_width)
+        )
+
+        controller.update_field(
+            "canvas.crosshair.width", 0.5, schedule_save=False
+        )
+        controller.save_now()
+        self.assertEqual(config["canvas"]["crosshair"]["width"], 0.5)
         self.assertEqual(len(saved), 1)
 
 

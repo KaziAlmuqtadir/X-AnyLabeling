@@ -65,8 +65,13 @@ def _settings_translation_markers() -> None:
         "Scan EXIF metadata when loading directories; this adds overhead.",
     )
     QCoreApplication.translate("SettingsDialog", "Toggle Annotation Checked")
+    QCoreApplication.translate("SettingsDialog", "Toggle Image Tags")
     QCoreApplication.translate("SettingsDialog", "File List Checkbox Editable")
     QCoreApplication.translate("SettingsDialog", "Use System Clipboard")
+    QCoreApplication.translate("SettingsDialog", "Application Font")
+    QCoreApplication.translate(
+        "SettingsDialog", "Choose from fonts available on this system."
+    )
     QCoreApplication.translate("SettingsDialog", "Shape Color Strategy")
     QCoreApplication.translate("SettingsDialog", "Default Shape Color")
     QCoreApplication.translate("SettingsDialog", "Auto Color Shift")
@@ -95,6 +100,12 @@ def _settings_translation_markers() -> None:
     )
     QCoreApplication.translate("SettingsDialog", "Adjust Step")
     QCoreApplication.translate("SettingsDialog", "Scale Step")
+    QCoreApplication.translate("SettingsDialog", "Rendering")
+    QCoreApplication.translate("SettingsDialog", "Labels")
+    QCoreApplication.translate("SettingsDialog", "Label Font Size")
+    QCoreApplication.translate(
+        "SettingsDialog", "Set the on-screen font size of annotation labels."
+    )
     QCoreApplication.translate("SettingsDialog", "Show Crosshair")
     QCoreApplication.translate("SettingsDialog", "Crosshair Width")
     QCoreApplication.translate("SettingsDialog", "Crosshair Color")
@@ -210,6 +221,37 @@ def _settings_translation_markers() -> None:
     QCoreApplication.translate(
         "SettingsDialog", "Set the spacing between sampled brush points."
     )
+    QCoreApplication.translate("SettingsDialog", "Magic Wand")
+    QCoreApplication.translate(
+        "SettingsDialog", "Magic Wand Default Threshold"
+    )
+    QCoreApplication.translate(
+        "SettingsDialog",
+        "Set the initial color tolerance for magic wand selections.",
+    )
+    QCoreApplication.translate("SettingsDialog", "Magic Wand Drag Sensitivity")
+    QCoreApplication.translate(
+        "SettingsDialog",
+        "Set the screen-pixel distance required for each tolerance step.",
+    )
+    QCoreApplication.translate("SettingsDialog", "Magic Wand Luminance Weight")
+    QCoreApplication.translate(
+        "SettingsDialog",
+        "Set how strongly lightness differences affect color matching.",
+    )
+    QCoreApplication.translate(
+        "SettingsDialog", "Magic Wand Simplification Tolerance"
+    )
+    QCoreApplication.translate(
+        "SettingsDialog",
+        "Set magic wand polygon simplification tolerance in image pixels. "
+        "Use 0 to preserve the extracted contour.",
+    )
+    QCoreApplication.translate("SettingsDialog", "Magic Wand Preview Opacity")
+    QCoreApplication.translate(
+        "SettingsDialog",
+        "Set the opacity of the live magic wand preview.",
+    )
     QCoreApplication.translate(
         "SettingsDialog",
         "Set the default depth direction for newly created cuboids.",
@@ -232,6 +274,7 @@ SETTINGS_GENERAL_KEYS = (
     "exif_scan_enabled",
     "file_list_checkbox_editable",
     "system_clipboard",
+    "font_family",
     "model_hub",
     "logger_level",
     "qt_image_allocation_limit",
@@ -333,13 +376,16 @@ class SettingField:
     allow_none: bool = False
     channels: int = 0
     description: str | None = None
+    single_step: float | None = None
 
 
 @lru_cache(maxsize=1)
 def load_template_config() -> dict[str, Any]:
-    with pkg_resources.open_text(
-        anylabeling_configs, "xanylabeling_config.yaml"
-    ) as f:
+    with (
+        pkg_resources.files(anylabeling_configs)
+        .joinpath("xanylabeling_config.yaml")
+        .open(encoding="utf-8") as f
+    ):
         return yaml.safe_load(f)
 
 
@@ -410,6 +456,9 @@ def _shortcut_label(short_key: str) -> str:
         ),
         "toggle_annotation_checked": QT_TRANSLATE_NOOP(
             SETTINGS_TRANSLATION_CONTEXT, "Toggle Annotation Checked"
+        ),
+        "toggle_image_tags": QT_TRANSLATE_NOOP(
+            SETTINGS_TRANSLATION_CONTEXT, "Toggle Image Tags"
         ),
         "auto_labeling_add_point": QT_TRANSLATE_NOOP(
             SETTINGS_TRANSLATION_CONTEXT, "Add Point"
@@ -726,12 +775,14 @@ def _non_shortcut_fields() -> list[SettingField]:
         SettingField(
             "shape.line_width",
             QT_TRANSLATE_NOOP(SETTINGS_TRANSLATION_CONTEXT, "Line Width"),
-            "int",
+            "float",
             "Shape",
             "Geometry",
             "Basic",
-            minimum=1,
-            maximum=20,
+            minimum=0.5,
+            maximum=20.0,
+            decimals=1,
+            single_step=0.5,
             description=QT_TRANSLATE_NOOP(
                 SETTINGS_TRANSLATION_CONTEXT,
                 "Control the default stroke width for shapes.",
@@ -860,9 +911,10 @@ def _non_shortcut_fields() -> list[SettingField]:
             "Canvas",
             "Interaction",
             "Crosshair",
-            minimum=1.0,
+            minimum=0.5,
             maximum=10.0,
             decimals=1,
+            single_step=0.5,
             description=QT_TRANSLATE_NOOP(
                 SETTINGS_TRANSLATION_CONTEXT,
                 "Set the stroke width of the crosshair guides.",
@@ -1005,6 +1057,98 @@ def _non_shortcut_fields() -> list[SettingField]:
             ),
         ),
         SettingField(
+            "canvas.magic_wand.default_threshold",
+            QT_TRANSLATE_NOOP(
+                SETTINGS_TRANSLATION_CONTEXT,
+                "Magic Wand Default Threshold",
+            ),
+            "int",
+            "Canvas",
+            "Interaction",
+            "Magic Wand",
+            minimum=0,
+            maximum=255,
+            description=QT_TRANSLATE_NOOP(
+                SETTINGS_TRANSLATION_CONTEXT,
+                "Set the initial color tolerance for magic wand selections.",
+            ),
+        ),
+        SettingField(
+            "canvas.magic_wand.drag_sensitivity",
+            QT_TRANSLATE_NOOP(
+                SETTINGS_TRANSLATION_CONTEXT,
+                "Magic Wand Drag Sensitivity",
+            ),
+            "float",
+            "Canvas",
+            "Interaction",
+            "Magic Wand",
+            minimum=0.1,
+            maximum=100.0,
+            decimals=1,
+            description=QT_TRANSLATE_NOOP(
+                SETTINGS_TRANSLATION_CONTEXT,
+                "Set the screen-pixel distance required for each tolerance "
+                "step.",
+            ),
+        ),
+        SettingField(
+            "canvas.magic_wand.luminance_weight",
+            QT_TRANSLATE_NOOP(
+                SETTINGS_TRANSLATION_CONTEXT,
+                "Magic Wand Luminance Weight",
+            ),
+            "float",
+            "Canvas",
+            "Interaction",
+            "Magic Wand",
+            minimum=0.0,
+            maximum=1.0,
+            decimals=2,
+            description=QT_TRANSLATE_NOOP(
+                SETTINGS_TRANSLATION_CONTEXT,
+                "Set how strongly lightness differences affect color "
+                "matching.",
+            ),
+        ),
+        SettingField(
+            "canvas.magic_wand.simplify_epsilon",
+            QT_TRANSLATE_NOOP(
+                SETTINGS_TRANSLATION_CONTEXT,
+                "Magic Wand Simplification Tolerance",
+            ),
+            "float",
+            "Canvas",
+            "Interaction",
+            "Magic Wand",
+            minimum=0.0,
+            maximum=50.0,
+            decimals=2,
+            description=QT_TRANSLATE_NOOP(
+                SETTINGS_TRANSLATION_CONTEXT,
+                "Set magic wand polygon simplification tolerance in image "
+                "pixels. Use 0 to preserve the extracted contour.",
+            ),
+        ),
+        SettingField(
+            "canvas.magic_wand.opacity",
+            QT_TRANSLATE_NOOP(
+                SETTINGS_TRANSLATION_CONTEXT,
+                "Magic Wand Preview Opacity",
+            ),
+            "float",
+            "Canvas",
+            "Interaction",
+            "Magic Wand",
+            minimum=0.0,
+            maximum=1.0,
+            decimals=2,
+            description=QT_TRANSLATE_NOOP(
+                SETTINGS_TRANSLATION_CONTEXT,
+                "Set the opacity of the live magic wand preview.",
+            ),
+        ),
+        SettingField(
             "canvas.cuboid.default_depth_vector",
             QT_TRANSLATE_NOOP(
                 SETTINGS_TRANSLATION_CONTEXT, "Default Depth Vector"
@@ -1046,6 +1190,35 @@ def _non_shortcut_fields() -> list[SettingField]:
             description=QT_TRANSLATE_NOOP(
                 SETTINGS_TRANSLATION_CONTEXT,
                 "Set the opacity used when rendering masks.",
+            ),
+        ),
+        SettingField(
+            "canvas.label_font_size",
+            QT_TRANSLATE_NOOP(SETTINGS_TRANSLATION_CONTEXT, "Label Font Size"),
+            "int",
+            "Canvas",
+            "Rendering",
+            "Labels",
+            minimum=6,
+            maximum=48,
+            description=QT_TRANSLATE_NOOP(
+                SETTINGS_TRANSLATION_CONTEXT,
+                "Set the on-screen font size of annotation labels.",
+            ),
+        ),
+        SettingField(
+            "font_family",
+            QT_TRANSLATE_NOOP(
+                SETTINGS_TRANSLATION_CONTEXT, "Application Font"
+            ),
+            "str",
+            "General",
+            "Appearance",
+            "Interface",
+            allow_none=True,
+            description=QT_TRANSLATE_NOOP(
+                SETTINGS_TRANSLATION_CONTEXT,
+                "Choose from fonts available on this system.",
             ),
         ),
         SettingField(
@@ -1139,6 +1312,7 @@ def _shortcut_category_map() -> dict[str, tuple[str, ...]]:
             "add_point_to_edge",
             "copy_polygon",
             "create_brush_polygon",
+            "create_magic_wand",
             "create_circle",
             "create_cuboid",
             "create_line",
@@ -1173,6 +1347,7 @@ def _shortcut_category_map() -> dict[str, tuple[str, ...]]:
             "show_linking",
             "show_masks",
             "show_texts",
+            "toggle_image_tags",
             "toggle_auto_use_last_gid",
             "toggle_auto_use_last_label",
             "toggle_compare_view",

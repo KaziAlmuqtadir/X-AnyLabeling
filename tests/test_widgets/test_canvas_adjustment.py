@@ -1,13 +1,17 @@
 import os
 import unittest
 
+import numpy as np
+from PIL import Image
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 try:
-    from PyQt6 import QtTest, QtWidgets
+    from PyQt6 import QtGui, QtTest, QtWidgets
 
     from anylabeling.resources import resources  # noqa: F401
     from anylabeling.views.labeling.widgets.canvas_adjustment import (
+        BrightnessContrastProcessor,
         CanvasAdjustmentWidget,
     )
 
@@ -40,14 +44,19 @@ class TestCanvasAdjustmentWidget(unittest.TestCase):
         self.assertIn("image", self.widget.brightness_slider.toolTip())
         self.assertIn("image", self.widget.contrast_slider.toolTip())
 
-    def test_toggle_collapses_content_and_keeps_title_visible(self):
+    def test_toggle_collapses_to_button_and_restores_content(self):
         geometry_spy = QtTest.QSignalSpy(self.widget.geometry_changed)
+        expanded_size = self.widget.sizeHint()
 
         self.widget.toggle_button.click()
         self.app.processEvents()
 
         self.assertTrue(self.widget.content_widget.isHidden())
-        self.assertTrue(self.widget.title_label.isVisible())
+        self.assertTrue(self.widget.title_label.isHidden())
+        self.assertTrue(self.widget.toggle_button.isVisible())
+        self.assertTrue(self.widget.property("collapsed"))
+        self.assertEqual(self.widget.sizeHint().width(), 28)
+        self.assertEqual(self.widget.sizeHint().height(), 28)
         self.assertEqual(len(geometry_spy), 1)
         self.assertIn("Expand", self.widget.toggle_button.toolTip())
 
@@ -55,6 +64,9 @@ class TestCanvasAdjustmentWidget(unittest.TestCase):
         self.app.processEvents()
 
         self.assertTrue(self.widget.content_widget.isVisible())
+        self.assertTrue(self.widget.title_label.isVisible())
+        self.assertFalse(self.widget.property("collapsed"))
+        self.assertEqual(self.widget.sizeHint(), expanded_size)
         self.assertIn("Collapse", self.widget.toggle_button.toolTip())
 
     def test_brightness_contrast_updates_are_throttled(self):
@@ -79,6 +91,44 @@ class TestCanvasAdjustmentWidget(unittest.TestCase):
         self.assertEqual(len(signal_spy), 0)
         self.assertEqual(self.widget.brightness_value_label.text(), "1.20")
         self.assertEqual(self.widget.contrast_value_label.text(), "1.40")
+
+
+@unittest.skipUnless(
+    PYQT_AVAILABLE, "PyQt6 is required for brightness/contrast tests"
+)
+class TestBrightnessContrastProcessor(unittest.TestCase):
+
+    def test_adjusts_16_bit_grayscale_image(self):
+        for brightness, contrast in ((60, 50), (50, 60)):
+            with self.subTest(brightness=brightness, contrast=contrast):
+                processor = BrightnessContrastProcessor()
+                image = Image.fromarray(
+                    np.array([[0, 1024], [32768, 65535]], dtype=np.uint16)
+                )
+
+                processor.update_image(image)
+                adjusted = processor.adjust(brightness, contrast)
+
+                self.assertFalse(adjusted.isNull())
+                self.assertEqual(
+                    adjusted.format(), QtGui.QImage.Format.Format_Grayscale16
+                )
+                self.assertIsNotNone(processor._grayscale16_data)
+                self.assertIsNotNone(processor._grayscale16_mean)
+
+    def test_clear_image_releases_image_resources(self):
+        processor = BrightnessContrastProcessor()
+        image = Image.fromarray(
+            np.array([[0, 1024], [32768, 65535]], dtype=np.uint16)
+        )
+        processor.update_image(image)
+
+        processor.clear_image()
+
+        self.assertIsNone(processor.img)
+        self.assertIsNone(processor._grayscale16_data)
+        self.assertIsNone(processor._grayscale16_mean)
+        self.assertIsNone(processor._grayscale16_qimage_data)
 
 
 if __name__ == "__main__":

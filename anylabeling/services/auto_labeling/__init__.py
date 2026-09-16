@@ -59,6 +59,7 @@ _CUSTOM_MODELS = [
     "depth_anything_v2",
     "yolow_ram",
     "rtdetrv2",
+    "rio_detr",
     "yolov8_det_track",
     "yolov8_seg_track",
     "yolov8_obb_track",
@@ -77,6 +78,7 @@ _CUSTOM_MODELS = [
     "rfdetr",
     "rfdetr_seg",
     "dfine",
+    "dfine_seg",
     "yolo12",
     "yolo26",
     "yolo26_seg",
@@ -137,6 +139,7 @@ _AUTO_LABELING_MASK_FINENESS_MODELS = [
     "grounding_sam2",
     "edge_sam",
     "rfdetr_seg",
+    "dfine_seg",
 ]
 
 
@@ -208,6 +211,7 @@ _AUTO_LABELING_CONF_MODELS = [
     "grounding_dino_api",
     "rtdetr",
     "rtdetrv2",
+    "rio_detr",
     "yolo_nas",
     "yolov5_obb",
     "yolov5_seg",
@@ -246,6 +250,7 @@ _AUTO_LABELING_CONF_MODELS = [
     "rfdetr_seg",
     "deimv2",
     "dfine",
+    "dfine_seg",
     "yolo12",
     "yolo26",
     "yolo26_sahi",
@@ -304,6 +309,7 @@ _AUTO_LABELING_IOU_MODELS = [
     "yolo26_obb_track",
     "yolo26_pose_track",
     "yoloe",
+    "dfine_seg",
 ]
 
 
@@ -316,6 +322,7 @@ _AUTO_LABELING_PRESERVE_EXISTING_ANNOTATIONS_STATE_MODELS = [
     "grounding_dino_api",
     "rtdetr",
     "rtdetrv2",
+    "rio_detr",
     "yolo_nas",
     "yolov5_obb",
     "yolov5_seg",
@@ -355,6 +362,7 @@ _AUTO_LABELING_PRESERVE_EXISTING_ANNOTATIONS_STATE_MODELS = [
     "segment_anything_3",
     "deimv2",
     "dfine",
+    "dfine_seg",
     "yolo12",
     "yolo26",
     "yolo26_sahi",
@@ -404,13 +412,18 @@ _THUMBNAIL_RENDER_MODELS = {
 # --- batch_processing_invalid_models ---
 _BATCH_PROCESSING_INVALID_MODELS = [
     "segment_anything",
-    "segment_anything_2",
     "sam_med2d",
     "sam_hq",
     "efficientvit_sam",
     "edge_sam",
     "open_vision",
     "geco",
+]
+
+
+# --- batch_processing_auto_grid_models ---
+_BATCH_PROCESSING_AUTO_GRID_MODELS = [
+    "segment_anything_2",
 ]
 
 

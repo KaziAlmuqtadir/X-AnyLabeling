@@ -7,10 +7,14 @@ from PyQt6 import QtWidgets
 from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QVBoxLayout,
+    QGridLayout,
+    QHBoxLayout,
     QProgressDialog,
     QDialog,
     QLabel,
     QLineEdit,
+    QSpinBox,
+    QPushButton,
     QDialogButtonBox,
     QApplication,
 )
@@ -18,19 +22,126 @@ from PyQt6.QtWidgets import (
 from anylabeling.app_info import __version__
 from anylabeling.views.labeling.utils.theme import get_theme
 from anylabeling.services.auto_labeling import (
+    _BATCH_PROCESSING_AUTO_GRID_MODELS,
     _BATCH_PROCESSING_INVALID_MODELS,
     _BATCH_PROCESSING_TEXT_PROMPT_MODELS,
     _BATCH_PROCESSING_VIDEO_MODELS,
     _SKIP_DET_MODELS,
 )
 from anylabeling.views.labeling.logger import logger
+from anylabeling.views.labeling.schema import IMAGE_TAGS_FIELD
 from anylabeling.views.labeling.shape import Shape
 from anylabeling.views.labeling.utils._io import io_open
+from anylabeling.views.labeling.utils.image_tags import normalize_image_tags
 from anylabeling.views.labeling.utils.qt import new_icon_path
-from anylabeling.views.labeling.utils.style import get_msg_box_style
+from anylabeling.views.labeling.utils.style import get_dialog_style
 from anylabeling.views.labeling.widgets.popup import Popup
 
 __all__ = ["run_all_images"]
+
+
+class BatchRangeDialog(QDialog):
+    def __init__(self, image_count, start_index=1, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(self.tr("Auto Run"))
+        self.setMinimumWidth(440)
+        theme = get_theme()
+        self.setStyleSheet(get_dialog_style() + f"""
+            QLabel#rangeTitle {{ font-size: 18px; font-weight: 600; }}
+            QLabel#rangeHint, QLabel#rangeSummary {{
+                color: {theme["text_secondary"]};
+                font-size: 12px;
+            }}
+            QSpinBox {{
+                padding: 6px 12px;
+                font-size: 14px;
+            }}
+            QPushButton {{ min-width: 60px; }}
+            QPushButton#runButton {{
+                background-color: {theme["primary"]};
+                color: white;
+                border-color: {theme["primary"]};
+            }}
+            QPushButton#runButton:hover {{
+                background-color: {theme["primary_hover"]};
+            }}
+            QPushButton#runButton:pressed {{
+                background-color: {theme["primary_pressed"]};
+            }}
+            """)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(0)
+        title = QLabel(self.tr("Image range"))
+        title.setObjectName("rangeTitle")
+        layout.addWidget(title)
+        layout.addSpacing(6)
+        hint = QLabel(self.tr("Select the first and last images to process."))
+        hint.setObjectName("rangeHint")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+        layout.addSpacing(20)
+
+        range_layout = QGridLayout()
+        range_layout.setHorizontalSpacing(16)
+        range_layout.setVerticalSpacing(8)
+        range_layout.setColumnStretch(0, 1)
+        range_layout.setColumnStretch(1, 1)
+        self.from_input = QSpinBox()
+        self.from_input.setRange(1, image_count)
+        self.from_input.setValue(start_index)
+        self.to_input = QSpinBox()
+        self.to_input.setRange(start_index, image_count)
+        self.to_input.setValue(image_count)
+        self.from_input.valueChanged.connect(self.to_input.setMinimum)
+        for column, (text, field) in enumerate(
+            (
+                (self.tr("From"), self.from_input),
+                (self.tr("To"), self.to_input),
+            )
+        ):
+            label = QLabel(text)
+            label.setBuddy(field)
+            field.setMinimumHeight(40)
+            field.setSizePolicy(
+                QtWidgets.QSizePolicy.Policy.Expanding,
+                QtWidgets.QSizePolicy.Policy.Fixed,
+            )
+            range_layout.addWidget(label, 0, column)
+            range_layout.addWidget(field, 1, column)
+        range_layout.setRowMinimumHeight(2, 8)
+        summary = QLabel()
+        summary.setObjectName("rangeSummary")
+
+        def update_summary():
+            selected = self.to_input.value() - self.from_input.value() + 1
+            summary.setText(
+                self.tr("%s of %s images selected") % (selected, image_count)
+            )
+
+        self.from_input.valueChanged.connect(update_summary)
+        self.to_input.valueChanged.connect(update_summary)
+        update_summary()
+        range_layout.addWidget(
+            summary,
+            3,
+            0,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+        )
+
+        buttons = QHBoxLayout()
+        buttons.setSpacing(8)
+        cancel_button = QPushButton(self.tr("Cancel"))
+        cancel_button.clicked.connect(self.reject)
+        buttons.addWidget(cancel_button, 1)
+        run_button = QPushButton(self.tr("Run"))
+        run_button.setObjectName("runButton")
+        run_button.setDefault(True)
+        run_button.clicked.connect(self.accept)
+        buttons.addWidget(run_button, 1)
+        range_layout.addLayout(buttons, 3, 1)
+        layout.addLayout(range_layout)
 
 
 class TextInputDialog(QDialog):
@@ -181,17 +292,24 @@ def load_existing_shapes(image_file):
 
 
 def finish_processing(self, progress_dialog):
-    target_index = self.current_index
-    target_file = self.image_list[self.current_index]
-    self.import_image_folder(osp.dirname(target_file), load=False)
-    self.file_list_widget.setCurrentRow(target_index)
+    if not getattr(self, "_batch_processing_active", False):
+        progress_dialog.close()
+        return
 
-    del self.text_prompt
-    del self.run_tracker
-    del self.image_index
-    del self.current_index
-
-    progress_dialog.close()
+    try:
+        target_file = self.image_list[self.current_index]
+        self.import_image_folder(osp.dirname(target_file), load=False)
+        target_index = self.fn_to_index[str(target_file)]
+        signals_blocked = self.file_list_widget.blockSignals(True)
+        try:
+            self.file_list_widget.setCurrentRow(target_index)
+        finally:
+            self.file_list_widget.blockSignals(signals_blocked)
+        self.load_file(target_file)
+        QApplication.processEvents()
+    finally:
+        _reset_batch_processing_state(self)
+        progress_dialog.close()
 
     popup = Popup(
         self.tr("Processing completed successfully!"),
@@ -203,6 +321,25 @@ def finish_processing(self, progress_dialog):
 
 def cancel_operation(self):
     self.cancel_processing = True
+
+
+def _start_batch_processing(self):
+    self._batch_processing_active = True
+    show_progress_dialog_and_process(self)
+
+
+def _reset_batch_processing_state(self):
+    self._batch_processing_active = False
+    for attribute in (
+        "text_prompt",
+        "run_tracker",
+        "image_index",
+        "current_index",
+        "_batch_start_index",
+        "_batch_end_index",
+    ):
+        if hasattr(self, attribute):
+            delattr(self, attribute)
 
 
 def _reset_auto_labeling_tracker(self):
@@ -221,12 +358,14 @@ def save_auto_labeling_result(self, image_file, auto_labeling_result):
         if auto_labeling_result is None:
             new_shapes = []
             new_description = ""
+            new_tags = None
             replace = True
         else:
             new_shapes = [
                 shape.to_dict() for shape in auto_labeling_result.shapes
             ]
             new_description = auto_labeling_result.description
+            new_tags = getattr(auto_labeling_result, "tags", None)
             replace = auto_labeling_result.replace
 
         if osp.exists(label_file):
@@ -234,14 +373,28 @@ def save_auto_labeling_result(self, image_file, auto_labeling_result):
                 data = json.load(f)
 
             if replace:
+                if (
+                    data["shapes"] != new_shapes
+                    or data.get("description", "") != new_description
+                ):
+                    data["checked"] = False
                 data["shapes"] = new_shapes
                 data["description"] = new_description
             else:
+                if new_shapes or new_description:
+                    data["checked"] = False
                 data["shapes"].extend(new_shapes)
                 if "description" in data:
                     data["description"] += new_description
                 else:
                     data["description"] = new_description
+            if new_tags is not None:
+                tags = normalize_image_tags(
+                    new_tags, f"auto labeling result for {image_file}"
+                )
+                if data.get(IMAGE_TAGS_FIELD) != tags:
+                    data["checked"] = False
+                data[IMAGE_TAGS_FIELD] = tags
         else:
             if self._config["store_data"]:
                 with open(image_file, "rb") as f:
@@ -256,6 +409,7 @@ def save_auto_labeling_result(self, image_file, auto_labeling_result):
             data = {
                 "version": __version__,
                 "flags": {},
+                "checked": False,
                 "shapes": new_shapes,
                 "imagePath": image_path,
                 "imageData": image_data,
@@ -263,6 +417,10 @@ def save_auto_labeling_result(self, image_file, auto_labeling_result):
                 "imageWidth": image_width,
                 "description": new_description,
             }
+            if new_tags is not None:
+                data[IMAGE_TAGS_FIELD] = normalize_image_tags(
+                    new_tags, f"auto labeling result for {image_file}"
+                )
 
         with io_open(label_file, "w") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
@@ -299,16 +457,14 @@ class BatchProcessingThread(QThread):
 
     def run(self):
         total_images = len(self.image_list)
+        start_index = self.image_index
+        image_count = total_images - start_index
         try:
             while (
                 self.image_index < total_images
                 and not self.app.cancel_processing
             ):
                 image_file = self.image_list[self.image_index]
-                current = self.image_index + 1
-                self.progress_updated.emit(
-                    current, f"Progress: {current}/{total_images}"
-                )
 
                 if self.text_prompt:
                     result = self.app.auto_labeling_widget.model_manager.predict_shapes(
@@ -340,6 +496,11 @@ class BatchProcessingThread(QThread):
 
                 save_auto_labeling_result(self.app, image_file, result)
                 self.image_index += 1
+                completed = self.image_index - start_index
+                self.progress_updated.emit(
+                    completed,
+                    f"Progress: {completed}/{image_count}",
+                )
 
             self.app.image_index = self.image_index
             self.processing_finished.emit()
@@ -365,7 +526,8 @@ def process_next_image(self, progress_dialog, batch=True):
     model = self.auto_labeling_widget.model_manager.loaded_model_config[
         "model"
     ]
-    total_images = len(self.image_list)
+    total_images = self._batch_end_index
+    image_count = total_images - self._batch_start_index
     self._progress_dialog = progress_dialog
 
     batch_processing_mode = "default"
@@ -381,7 +543,7 @@ def process_next_image(self, progress_dialog, batch=True):
         )
         self._batch_thread = BatchProcessingThread(
             self,
-            self.image_list,
+            self.image_list[:total_images],
             self.image_index,
             model_type,
             self.text_prompt,
@@ -394,6 +556,7 @@ def process_next_image(self, progress_dialog, batch=True):
             progress_dialog.setLabelText(label)
 
         def _on_error(msg):
+            _reset_batch_processing_state(self)
             progress_dialog.close()
             logger.error(f"Error occurred while processing images: {msg}")
             popup = Popup(
@@ -416,12 +579,6 @@ def process_next_image(self, progress_dialog, batch=True):
             not self.cancel_processing
         ):
             image_file = self.image_list[self.image_index]
-            current_progress = self.image_index + 1
-            progress_dialog.setValue(current_progress)
-            progress_dialog.setLabelText(
-                f"Progress: {current_progress}/{total_images}"
-            )
-            QApplication.processEvents()
 
             batch_processing_mode = "default"
             if model_type == "remote_server":
@@ -481,10 +638,17 @@ def process_next_image(self, progress_dialog, batch=True):
                 )
 
             self.image_index += 1
+            completed = self.image_index - self._batch_start_index
+            progress_dialog.setValue(completed)
+            progress_dialog.setLabelText(
+                f"Progress: {completed}/{image_count}"
+            )
+            QApplication.processEvents()
 
         finish_processing(self, progress_dialog)
 
     except Exception as e:
+        _reset_batch_processing_state(self)
         progress_dialog.close()
 
         logger.error(f"Error occurred while processing images: {e}")
@@ -500,28 +664,24 @@ def process_next_image(self, progress_dialog, batch=True):
 
 def show_progress_dialog_and_process(self):
     self.cancel_processing = False
+    image_count = self._batch_end_index - self._batch_start_index
 
     progress_dialog = QProgressDialog(
         self.tr("Processing..."),
         self.tr("Cancel"),
         0,
-        len(self.image_list),
+        image_count,
         self,
     )
     progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
     progress_dialog.setWindowTitle(self.tr("Batch Processing"))
     progress_dialog.setMinimumWidth(400)
     progress_dialog.setMinimumHeight(150)
+    progress_dialog.setAutoClose(False)
+    progress_dialog.setAutoReset(False)
 
-    initial_progress = (
-        self.image_index + 1
-        if self.image_index < len(self.image_list)
-        else len(self.image_list)
-    )
-    progress_dialog.setValue(initial_progress)
-    progress_dialog.setLabelText(
-        f"Progress: {initial_progress}/{len(self.image_list)}"
-    )
+    progress_dialog.setValue(0)
+    progress_dialog.setLabelText(f"Progress: 0/{image_count}")
     progress_bar = progress_dialog.findChild(QtWidgets.QProgressBar)
 
     if progress_bar:
@@ -539,7 +699,7 @@ def show_progress_dialog_and_process(self):
 
         def update_progress(value):
             if batch_processing_mode != "video":
-                progress_dialog.setLabelText(f"{value}/{len(self.image_list)}")
+                progress_dialog.setLabelText(f"{value}/{image_count}")
 
         progress_bar.valueChanged.connect(update_progress)
 
@@ -602,6 +762,10 @@ def show_progress_dialog_and_process(self):
 
 
 def run_all_images(self):
+    if getattr(self, "_batch_processing_active", False):
+        logger.warning("Batch processing is already running.")
+        return
+
     if len(self.image_list) < 1:
         return
 
@@ -627,22 +791,19 @@ def run_all_images(self):
         )
         return
 
-    response = QtWidgets.QMessageBox()
-    response.setIcon(QtWidgets.QMessageBox.Icon.Warning)
-    response.setWindowTitle(self.tr("Confirmation"))
-    response.setText(self.tr("Do you want to process all images?"))
-    response.setStandardButtons(
-        QtWidgets.QMessageBox.StandardButton.Cancel
-        | QtWidgets.QMessageBox.StandardButton.Ok
+    current_index = self.fn_to_index[str(self.filename)]
+    response = BatchRangeDialog(
+        len(self.image_list), current_index + 1, parent=self
     )
-    response.setStyleSheet(get_msg_box_style())
-    if response.exec() != QtWidgets.QMessageBox.StandardButton.Ok:
+    if response.exec() != QDialog.DialogCode.Accepted:
         return
 
     logger.info("Start running all images...")
 
-    self.current_index = self.fn_to_index[str(self.filename)]
-    self.image_index = self.current_index
+    self.current_index = current_index
+    self._batch_start_index = response.from_input.value() - 1
+    self._batch_end_index = response.to_input.value()
+    self.image_index = self._batch_start_index
     self.text_prompt = ""
     self.run_tracker = False
 
@@ -668,30 +829,35 @@ def run_all_images(self):
             return
         if batch_processing_mode == "video":
             self.run_tracker = True
-            show_progress_dialog_and_process(self)
+            _start_batch_processing(self)
         elif batch_processing_mode == "text_prompt":
             text_input_dialog = TextInputDialog(parent=self)
             self.text_prompt = text_input_dialog.get_input_text()
             if self.text_prompt:
-                show_progress_dialog_and_process(self)
+                _start_batch_processing(self)
         else:
-            show_progress_dialog_and_process(self)
+            _start_batch_processing(self)
+    elif model_type in _BATCH_PROCESSING_AUTO_GRID_MODELS:
+        self.auto_labeling_widget.model_manager.set_auto_labeling_marks(
+            [{"type": "auto_grid"}]
+        )
+        _start_batch_processing(self)
     elif model_type in _BATCH_PROCESSING_TEXT_PROMPT_MODELS:
         text_input_dialog = TextInputDialog(parent=self)
         self.text_prompt = text_input_dialog.get_input_text()
         if self.text_prompt or model_type == "yoloe":
-            show_progress_dialog_and_process(self)
+            _start_batch_processing(self)
     elif (
         self.auto_labeling_widget.model_manager.loaded_model_config["type"]
         == "florence2"
     ):
         self.text_prompt = self.auto_labeling_widget.edit_text.text()
-        show_progress_dialog_and_process(self)
+        _start_batch_processing(self)
     elif (
         self.auto_labeling_widget.model_manager.loaded_model_config["type"]
         in _BATCH_PROCESSING_VIDEO_MODELS
     ):
         self.run_tracker = True
-        show_progress_dialog_and_process(self)
+        _start_batch_processing(self)
     else:
-        show_progress_dialog_and_process(self)
+        _start_batch_processing(self)

@@ -24,11 +24,7 @@ This example uses the remote-server workflow. Before using GECO2 in X-AnyLabelin
 
 Launch the X-AnyLabeling client, press `Ctrl+A` or click the `AI` button in the left menu bar to open the auto-labeling panel. In the model dropdown list, select `Remote-Server`, then choose `GECO2`.
 
-<video src="https://github.com/user-attachments/assets/da8b0c7b-f35a-487a-bcbc-cdb20583ff34" width="100%" controls>
-</video>
-
-> [!NOTE]
-> Replace the placeholder GIF above with your final GECO2 demo.
+<img src="../geco2/.data/demo.gif" width="100%" />
 
 1. Load an image into X-AnyLabeling.
 2. Choose the rectangle prompt tool in the auto-labeling panel.

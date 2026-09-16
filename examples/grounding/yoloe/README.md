@@ -50,7 +50,8 @@ python anylabeling/app.py
 
 ## Detection Modes
 
-https://github.com/user-attachments/assets/52cbdb5d-cc60-4be5-826f-903ea4330ca8
+<video src="https://github.com/user-attachments/assets/52cbdb5d-cc60-4be5-826f-903ea4330ca8" width="100%" controls>
+</video>
 
 YOLOE supports three distinct detection modes, each optimized for different use cases:
 
@@ -128,7 +129,7 @@ furniture
 
 Process multiple images efficiently using consistent detection parameters.
 
-**Activation:** Press `Ctrl+M` (Windows/Linux) or `Cmd+M` (macOS)
+**Activation:** Press `Ctrl+B` (Windows/Linux) or `Cmd+B` (macOS).
 
 **Supported Modes:**
 - **Text Prompting:** Enter text prompts before starting batch processing to apply them across all images

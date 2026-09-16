@@ -1,5 +1,210 @@
 # X-AnyLabeling Changelog
 
+## `v4.0.6` (Sep 05, 2026)
+
+X-AnyLabeling 4.0.6 expands external training and model deployment workflows, adds more control to auto-labeling runs, and improves custom model management.
+
+### 🚀 New Features
+
+- Enhance external Ultralytics training with isolated Python workers, environment and device detection, workspace snapshots, reusable organized datasets, WSL path resolution, background execution, improved logs and previews, and deployable ONNX export configurations.
+- Add optional start and end image ranges for Auto Run, with localized controls and validation.
+- Allow custom auto-labeling models to be removed directly from the searchable model dropdown.
+
+### 🐛 Bug Fixes
+
+- Preserve label edit mode after uploading attributes. (#1445)
+- Reset an image's checked status when auto-labeling inference modifies its annotations.
+
+### 🌟 Contributors
+
+A total of 2 developers contributed to this release.
+
+Thank @atirna, @CVHub520
+
+## `v4.0.5` (Aug 28, 2026)
+
+X-AnyLabeling 4.0.5 improves nested YOLO dataset handling, refines canvas and review visuals, and hardens Windows builds.
+
+### 🚀 New Features
+
+- Preserve nested image directory structures when importing and exporting YOLO annotations, with export path validation and collision detection. (#806)
+
+### 🐛 Bug Fixes
+
+- Make annotation stroke widths precise and zoom-independent, and extend the crosshair across the visible canvas. (#1436)
+- Resolve missing Conda DLLs in PyInstaller-based Windows builds. (#1437)
+
+### 🛠️ Improvements
+
+- Remove redundant brightness, contrast, and crosshair menu actions after consolidating their controls in settings.
+- Refine selected-label styling and review status indicators, and show the current checked state in the window title. (#1439)
+- Refresh the English and Chinese README links and event banner.
+
+### 🌟 Contributors
+
+A total of 1 developer contributed to this release.
+
+Thank @CVHub520
+
+## `v4.0.4` (Aug 24, 2026)
+
+X-AnyLabeling 4.0.4 adds configurable canvas label sizing and improves terminal output and visual documentation.
+
+### 🚀 New Features
+
+- Add configurable label font size for canvas annotations. (#1415)
+
+### 🐛 Bug Fixes
+
+- Remove the outdated Baidu Cloud reference from generated release notes.
+
+### 🛠️ Improvements
+
+- Refresh the CLI startup banner and streamline terminal output.
+- Expand the English and Chinese guides with updated examples, visual walkthroughs, and a terminal launch preview.
+- Restore the Netron guide image.
+
+### 🌟 Contributors
+
+A total of 1 developer contributed to this release.
+
+Thank @CVHub520
+
+## `v4.0.3` (Aug 23, 2026)
+
+X-AnyLabeling 4.0.3 adds image-level tagging and improves annotation precision, chatbot provider switching, and overlapping mask exports.
+
+### 🚀 New Features
+
+- Add image-level tag creation, editing, reordering, batch deletion, copy-all, and auto-labeling support. (#1320)
+
+### 🐛 Bug Fixes
+
+- Refine canvas selection and keyboard movement for precise annotation adjustments, and restore shape fill after transforms. (#1429)
+- Restore editable custom model names when switching chatbot providers. (#1430)
+- Honor label priority and shape layer order when exporting overlapping segmentation masks. (#1431)
+
+### 🛠️ Improvements
+
+- Refresh the interface preview in the English and Chinese README files.
+
+### 🌟 Contributors
+
+A total of 2 developers contributed to this release.
+
+Thank @zhixuwei, @CVHub520
+
+## `v4.0.2` (Aug 12, 2026)
+
+X-AnyLabeling 4.0.2 expands auto-labeling with new detection and segmentation models and improves YOLO export diagnostics.
+
+### 🚀 New Features
+
+- Add RT-DETRv2-OBB models for oriented object detection.
+- Add D-FINE-seg models for instance segmentation. (#1427)
+- Show failing image details when YOLO export errors occur.
+
+### 🐛 Bug Fixes
+
+- Provide actionable validation errors for incomplete YOLO pose annotations. (#1426)
+
+### 🌟 Contributors
+
+A total of 2 developers contributed to this release.
+
+Thank @xixyibaozuis, @CVHub520
+
+## `v4.0.1` (Aug 08, 2026)
+
+X-AnyLabeling 4.0.1 improves polygon creation and resolves several auto-labeling and mask export issues.
+
+### 🚀 New Features
+
+- Add a configurable Magic Wand tool for creating polygons from contiguous color regions. (#1421)
+
+### 🐛 Bug Fixes
+
+- Prevent mask export failures when source images are unavailable, honor checked selections, and handle cancellation cleanly. (#1422)
+- Forward class filters to remote models.
+- Preserve model class and filter names as strings to prevent YAML boolean-like labels from crashing the class filter dialog. (#1425)
+
+### 🌟 Contributors
+
+A total of 2 developers contributed to this release.
+
+Thank @cyphercodes, @CVHub520
+
+## `v4.0.0` (Aug 05, 2026)
+
+X-AnyLabeling 4.0.0 is a major release built around a PyQt6 interface, expanded annotation workflows, broader AI model support, and a more reliable cross-platform release pipeline. The beta release notes below retain the full development history.
+
+### 🚀 New Features
+
+- Add a prompt-free Segment Everything workflow powered by the SAM2 Automatic Mask Generator, with grid density, minimum region size, cancellation, and polygon or contour output controls.
+- Add configurable application fonts and default shortcuts for circle, line, point, and line strip drawing tools.
+
+### 🐛 Bug Fixes
+
+- Align SAM2 automatic mask generation with the official implementation and bound memory usage through chunked grid processing.
+- Harden annotation parsing, model downloads, and export paths against unsafe input and path traversal.
+- Save annotation files atomically and restore Pillow decompression bomb protection.
+- Preserve shape metadata, attributes, defaults, and canvas updates across label editing and upload workflows.
+- Stabilize concurrent Chatbot model refreshes, VQA cancellation, video uploads, and video classifier sidecar validation.
+- Skip invalid VOC geometries and load YOLOE embedding models independently of the working directory.
+
+### 🛠️ Improvements
+
+- Read image dimensions without decoding full pixel data.
+- Refresh the application branding and menu icon system for a more consistent interface.
+- Update package metadata, documentation, and in-app links for the official website.
+- Add automated website content synchronization from the main repository.
+
+### 🌟 Contributors
+
+A total of 2 developers contributed to this release.
+
+Thank @Crackvignoule, @CVHub520
+
+## `v4.0.0-beta.13` (Jul 12, 2026)
+
+### 🐛 Bug Fixes
+
+- Keep CUDA 12 executable builds on a compatible ONNX Runtime GPU release.
+- Validate that Windows CUDA 12 artifacts do not link against CUDA 13 libraries.
+- Restore Linux release tests and builds with the required runtime dependencies.
+
+### 🛠️ Improvements
+
+- Add Linux and Windows CUDA 12 executables to automated releases.
+- Publish Python packages through PyPI Trusted Publishing.
+- Update and pin release workflow actions for reproducible builds.
+
+### 🌟 Contributors
+
+A total of 1 developer contributed to this release.
+
+Thank @CVHub520
+
+## `v4.0.0-beta.12` (Jul 11, 2026)
+
+### 🚀 New Features
+
+- Add bottom-left canvas controls for label opacity and image brightness and contrast.
+- Add a collapsible display adjustment panel with synchronized controls. (#1405,#1406)
+- Add a drag rotation handle for rotated boxes. (#1407)
+- Show the valid image count for the selected training task.
+
+### 🛠️ Improvements
+
+- Automate cross-platform executable builds and GitHub releases.
+- Remove legacy tools and reorganize tests and documentation.
+
+### 🌟 Contributors
+
+A total of 2 developers contributed to this release.
+
+Thank @lovejoohero0228, @CVHub520
+
 ## `v4.0.0-beta.11` (Jun 28, 2026)
 
 ### 🚀 New Features

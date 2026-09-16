@@ -21,6 +21,29 @@ from anylabeling.views.labeling.label_file import LabelFile, LabelFileError
 from anylabeling.views.labeling import utils
 
 
+class _ModelConfigLoader(yaml.SafeLoader):
+    def resolve(self, kind, value, implicit):
+        if self.yaml_path_resolvers:
+            exact_paths = self.resolver_exact_paths[-1]
+            if kind in exact_paths:
+                return exact_paths[kind]
+            if None in exact_paths:
+                return exact_paths[None]
+        return super().resolve(kind, value, implicit)
+
+
+for _key in ("classes", "filter_classes"):
+    _ModelConfigLoader.add_path_resolver(
+        "tag:yaml.org,2002:str", [_key, None], str
+    )
+    _ModelConfigLoader.add_path_resolver("tag:yaml.org,2002:str", [_key], str)
+
+
+def load_model_config(stream):
+    """Load YAML while preserving class and filter names as strings."""
+    return yaml.load(stream, Loader=_ModelConfigLoader)
+
+
 def _check_model_worker(model_path):
     """Worker function to validate model in subprocess."""
     try:
@@ -97,7 +120,7 @@ class Model(QObject):
                     ).format(model_config=model_config)
                 )
             with open(model_config, "r") as f:
-                self.config = yaml.safe_load(f)
+                self.config = load_model_config(f)
         elif isinstance(model_config, dict):
             self.config = model_config
         else:
@@ -147,13 +170,37 @@ class Model(QObject):
         if self._cancel_event and self._cancel_event.is_set():
             raise DownloadCancelledError("Download cancelled by user")
 
-    def download_with_retry(self, url, dest_path, progress_callback):
+    @staticmethod
+    def _ensure_path_within_directory(path, directory):
+        directory = pathlib.Path(directory).resolve()
+        path = pathlib.Path(path).resolve()
+        if path == directory or directory not in path.parents:
+            raise ValueError(
+                f"Model path must be within the model directory: {path}"
+            )
+        return str(path)
+
+    @classmethod
+    def _ensure_download_paths(cls, dest_path, directory):
+        if directory is None:
+            return dest_path, dest_path + ".part"
+        dest_path = cls._ensure_path_within_directory(dest_path, directory)
+        part_path = cls._ensure_path_within_directory(
+            dest_path + ".part", directory
+        )
+        return dest_path, part_path
+
+    def download_with_retry(
+        self, url, dest_path, progress_callback, model_directory=None
+    ):
         """Download file with retry mechanism and cancellation support.
 
         Uses chunk-based downloading so the cancel flag can be checked between
         chunks, giving the user near-instant cancellation.
         """
-        part_path = dest_path + ".part"
+        dest_path, part_path = self._ensure_download_paths(
+            dest_path, model_directory
+        )
 
         for attempt in range(self.MAX_RETRIES):
             try:
@@ -170,6 +217,9 @@ class Model(QObject):
                 total_size = int(response.headers.get("Content-Length", 0))
                 downloaded = 0
 
+                dest_path, part_path = self._ensure_download_paths(
+                    dest_path, model_directory
+                )
                 with open(part_path, "wb") as f:
                     while True:
                         self._check_cancelled()
@@ -181,16 +231,25 @@ class Model(QObject):
                         if progress_callback:
                             progress_callback(downloaded, total_size)
 
+                dest_path, part_path = self._ensure_download_paths(
+                    dest_path, model_directory
+                )
                 os.replace(part_path, dest_path)
                 return True
 
             except DownloadCancelledError:
                 if os.path.exists(part_path):
+                    _, part_path = self._ensure_download_paths(
+                        dest_path, model_directory
+                    )
                     os.remove(part_path)
                 raise
 
             except (URLError, socket.timeout, OSError) as e:
                 if os.path.exists(part_path):
+                    _, part_path = self._ensure_download_paths(
+                        dest_path, model_directory
+                    )
                     os.remove(part_path)
                 delay = self.RETRY_DELAY * (attempt + 1)
                 if attempt < self.MAX_RETRIES - 1:
@@ -259,13 +318,14 @@ class Model(QObject):
 
         # Create model folder
         model_path = os.path.abspath(os.path.join(work_dir, data_dir))
-        model_abs_path = os.path.abspath(
+        model_directory = os.path.join(model_path, "models")
+        model_abs_path = self._ensure_path_within_directory(
             os.path.join(
-                model_path,
-                "models",
+                model_directory,
                 model_config["name"],
                 filename,
-            )
+            ),
+            model_directory,
         )
         if os.path.exists(model_abs_path):
             file_extension = os.path.splitext(model_abs_path)[1].lower()
@@ -290,12 +350,18 @@ class Model(QObject):
                     f"Model validation failed or file is empty: {model_abs_path}. Deleting and redownloading..."
                 )
                 try:
+                    model_abs_path = self._ensure_path_within_directory(
+                        model_abs_path, model_directory
+                    )
                     os.remove(model_abs_path)
                     logger.info(
                         f"Model file {model_abs_path} deleted successfully"
                     )
                 except Exception as e2:  # noqa
                     logger.error(f"Could not delete corrupted file: {str(e2)}")
+        model_abs_path = self._ensure_path_within_directory(
+            model_abs_path, model_directory
+        )
         pathlib.Path(model_abs_path).parent.mkdir(parents=True, exist_ok=True)
 
         # Download url
@@ -345,7 +411,15 @@ class Model(QObject):
                 if self._on_progress:
                     self._on_progress(downloaded, total_size)
 
-            self.download_with_retry(download_url, model_abs_path, _progress)
+            model_abs_path = self._ensure_path_within_directory(
+                model_abs_path, model_directory
+            )
+            self.download_with_retry(
+                download_url,
+                model_abs_path,
+                _progress,
+                model_directory=model_directory,
+            )
 
         except DownloadCancelledError:
             raise

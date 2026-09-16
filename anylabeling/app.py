@@ -14,7 +14,6 @@ import argparse
 import codecs
 import logging
 import multiprocessing
-
 import sys
 from pathlib import Path
 
@@ -23,18 +22,18 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 import yaml
 from PyQt6 import QtCore, QtGui, QtWidgets
 
+from anylabeling import config as anylabeling_config
 from anylabeling.app_info import (
-    __appname__,
-    __version__,
-    __url__,
     CLI_HELP_MSG,
+    __appname__,
+    __url__,
+    __version__,
 )
 from anylabeling.config import (
     get_config,
-    set_work_directory,
     get_work_directory,
+    set_work_directory,
 )
-from anylabeling import config as anylabeling_config
 
 
 def is_wsl_environment():
@@ -58,6 +57,28 @@ def get_default_qt_platform():
     return None
 
 
+def build_startup_banner(colorize):
+    orange = "38;2;247;134;64"
+    coral = "38;2;243;101;94"
+    teal = "38;2;35;104;122"
+    purple = "38;2;139;88;125"
+    logo = (
+        f"{colorize('██▄', orange)}  {colorize('▄██', coral)}",
+        f"  {colorize('▀█', orange)}{colorize('█▀', coral)}  ",
+        f"  {colorize('▄█', teal)}{colorize('█▄', purple)}  ",
+        f"{colorize('██▀', teal)}  {colorize('▀██', purple)}",
+    )
+    details = (
+        "Anylabeling",
+        f"Version  {__version__}",
+        f"Docs     {__url__}",
+        "Github   https://github.com/CVHub520/X-AnyLabeling",
+    )
+    return "\n".join(
+        f"{logo_line} {detail}" for logo_line, detail in zip(logo, details)
+    )
+
+
 def main():
     multiprocessing.freeze_support()
 
@@ -66,58 +87,42 @@ def main():
 
     parser = argparse.ArgumentParser()
 
-    subparsers = parser.add_subparsers(
-        dest="command", help="available commands"
-    )
+    subparsers = parser.add_subparsers(dest="command", help="available commands")
     subparsers.add_parser("help", help="show help message")
-    subparsers.add_parser(
-        "checks", help="display system and package information"
-    )
+    subparsers.add_parser("checks", help="display system and package information")
     subparsers.add_parser("version", help="show version information")
     subparsers.add_parser("config", help="show config file path")
-    train_worker_parser = subparsers.add_parser(
-        "train-worker", help=argparse.SUPPRESS
+    train_worker_parser = subparsers.add_parser("train-worker", help=argparse.SUPPRESS)
+    train_worker_parser.add_argument("--payload", required=True, help=argparse.SUPPRESS)
+    training_worker_parser = subparsers.add_parser(
+        "training-worker", help=argparse.SUPPRESS
     )
-    train_worker_parser.add_argument(
+    training_worker_parser.add_argument(
         "--payload", required=True, help=argparse.SUPPRESS
     )
 
-    convert_parser = subparsers.add_parser(
-        "convert", help="run conversion tasks"
-    )
+    convert_parser = subparsers.add_parser("convert", help="run conversion tasks")
     convert_parser.add_argument(
         "--task",
         type=str,
         help="conversion task name (e.g., yolo2xlabel, xlabel2yolo)",
     )
-    convert_parser.add_argument(
-        "--images", type=str, help="image directory path"
-    )
-    convert_parser.add_argument(
-        "--labels", type=str, help="label directory path"
-    )
-    convert_parser.add_argument(
-        "--output", type=str, help="output directory path"
-    )
-    convert_parser.add_argument(
-        "--classes", type=str, help="classes file path"
-    )
+    convert_parser.add_argument("--images", type=str, help="image directory path")
+    convert_parser.add_argument("--labels", type=str, help="label directory path")
+    convert_parser.add_argument("--output", type=str, help="output directory path")
+    convert_parser.add_argument("--classes", type=str, help="classes file path")
     convert_parser.add_argument(
         "--pose-cfg", type=str, help="pose configuration file path"
     )
     convert_parser.add_argument("--mode", type=str, help="conversion mode")
-    convert_parser.add_argument(
-        "--mapping", type=str, help="mapping table file path"
-    )
+    convert_parser.add_argument("--mapping", type=str, help="mapping table file path")
     convert_parser.add_argument(
         "--skip-empty-files",
         action="store_true",
         help="skip creating empty output files, only support `xlabel2yolo` and `xlabel2voc` tasks",
     )
 
-    parser.add_argument(
-        "--reset-config", action="store_true", help="reset qt config"
-    )
+    parser.add_argument("--reset-config", action="store_true", help="reset qt config")
     parser.add_argument(
         "--logger-level",
         default="info",
@@ -201,7 +206,7 @@ def main():
         dest="label_flags",
         help=r"yaml string of label specific flags OR file containing json "
         r"string of label specific flags (ex. {person-\d+: [male, tall], "
-        r"dog-\d+: [black, brown, white], .*: [occluded]})",  # NOQA
+        r"dog-\d+: [black, brown, white], .*: [occluded]})",
         default=argparse.SUPPRESS,
     )
     parser.add_argument(
@@ -249,26 +254,31 @@ def main():
             "anylabeling.services.auto_training.ultralytics.trainer",
             fromlist=["run_training_worker_command"],
         ).run_training_worker_command(args),
+        "training-worker": lambda args: __import__(
+            "anylabeling.services.auto_training.ultralytics.worker",
+            fromlist=["main"],
+        ).main(args.payload),
     }
 
     if args.command and args.command in special:
         special[args.command](args)
         return
 
-    from anylabeling.views.mainwindow import MainWindow
-    from anylabeling.views.labeling.logger import logger, LOG_FILE
-    from anylabeling.views.labeling.utils import new_icon, gradient_text
+    # NOTE: Do not remove this import, it is required for loading translations
+    from anylabeling.resources import resources  # noqa: F401
+    from anylabeling.views.labeling.logger import LOG_FILE, logger
+    from anylabeling.views.labeling.utils import new_icon
+    from anylabeling.views.labeling.utils.general import format_color
+    from anylabeling.views.labeling.utils.qt import apply_application_font
     from anylabeling.views.labeling.utils.theme import (
-        init_theme,
         get_app_stylesheet,
         get_dark_palette,
+        init_theme,
     )
     from anylabeling.views.labeling.utils.update_checker import (
         check_for_updates_async,
     )
-
-    # NOTE: Do not remove this import, it is required for loading translations
-    from anylabeling.resources import resources  # noqa: F401
+    from anylabeling.views.mainwindow import MainWindow
 
     if hasattr(args, "flags"):
         if os.path.isfile(args.flags):
@@ -299,21 +309,16 @@ def main():
     output = config_from_args.pop("output")
     config_file_or_yaml = config_from_args.pop("config")
     if config_file_or_yaml is None:
-        config_file_or_yaml = os.path.join(
-            get_work_directory(), ".xanylabelingrc"
-        )
+        config_file_or_yaml = os.path.join(get_work_directory(), ".xanylabelingrc")
     logger_level = config_from_args.pop("logger_level")
     no_auto_update_check = config_from_args.pop("no_auto_update_check", False)
     qt_platform = config_from_args.pop("qt_platform", None)
 
     logger.setLevel(getattr(logging, logger_level.upper()))
+    for banner_line in build_startup_banner(format_color).splitlines():
+        logger.info(banner_line)
     logger.info(
-        f"🚀 {gradient_text(f'X-AnyLabeling v{__version__} launched!')}"
-    )
-    logger.info(f"⭐ If you like it, give us a star: {__url__}")
-    logger.info(
-        f"📝 Debug logs (always DEBUG level, with tracebacks) are saved to: "
-        f"{LOG_FILE}"
+        f"📝 Debug logs (always DEBUG level, with tracebacks) are saved to: {LOG_FILE}"
     )
     if qt_platform:
         os.environ["QT_QPA_PLATFORM"] = qt_platform
@@ -323,8 +328,7 @@ def main():
         if default_qt_platform:
             os.environ["QT_QPA_PLATFORM"] = default_qt_platform
             logger.info(
-                "🖥️ Detected WSL/Wayland; using Qt platform: "
-                f"{default_qt_platform}"
+                f"🖥️ Detected WSL/Wayland; using Qt platform: {default_qt_platform}"
             )
 
     anylabeling_config.current_config_file = config_file_or_yaml
@@ -348,9 +352,7 @@ def main():
 
     language = config.get("language", QtCore.QLocale.system().name())
     translator = QtCore.QTranslator()
-    loaded_language = translator.load(
-        ":/languages/translations/" + language + ".qm"
-    )
+    loaded_language = translator.load(":/languages/translations/" + language + ".qm")
     QtCore.QCoreApplication.setAttribute(
         QtCore.Qt.ApplicationAttribute.AA_ShareOpenGLContexts
     )
@@ -361,11 +363,11 @@ def main():
             logger.info("🖼️ Disabled Qt image allocation limit")
         else:
             logger.info(
-                "🖼️ Set Qt image allocation limit to "
-                f"{qt_image_allocation_limit} MB"
+                f"🖼️ Set Qt image allocation limit to {qt_image_allocation_limit} MB"
             )
 
     app = QtWidgets.QApplication(sys.argv)
+    apply_application_font(config.get("font_family"))
     init_theme(config.get("theme", "light"))
     _dark_palette = get_dark_palette()
     if _dark_palette is not None:
@@ -381,8 +383,7 @@ def main():
         app.installTranslator(translator)
     else:
         logger.warning(
-            f"Failed to load translation for {language}. "
-            "Using default language.",
+            f"Failed to load translation for {language}. Using default language.",
         )
     if reset_config:
         settings = QtCore.QSettings("anylabeling", "anylabeling")

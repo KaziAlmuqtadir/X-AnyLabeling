@@ -1,45 +1,45 @@
 # 模型加载
 
-X-AnyLabeling 当前内置了许多通用模型，具体可参考 [模型列表](../../docs/zh_cn/model_zoo.md)。
+X-AnyLabeling 内置了多种通用模型，完整列表参见[模型列表](./model_zoo.md)。
 
 > [!TIP]
-> 如果你需要通过远程服务器部署模型推理服务并支持多人协作，请参考 [X-AnyLabeling-Server](https://github.com/CVHub520/X-AnyLabeling-Server)。
+> 如需部署远程推理服务或支持多人协作，请参考 [X-AnyLabeling-Server](https://github.com/CVHub520/X-AnyLabeling-Server)。
 
 ## 加载内置模型
 
-在启用 AI 辅助标定功能之前，用户需要先加载模型，可通过左侧菜单栏的 `AI` 标识按钮或直接使用快捷键 `Ctrl+A` 激活。
+使用 AI 辅助标注前，需要先加载模型。点击左侧工具栏中的 AI 按钮，或按 `Ctrl+A` 打开模型面板。
 
-通常，当用户从模型下拉列表中选择对应的模型时，后台会检查当前用户目录下 `~/xanylabeling_data/models/${model_name}` 是否存在相应的模型文件。如果存在，则直接加载；否则，直接通过网络自动下载到指定目录。
+从模型下拉列表中选择模型后，应用会检查 `~/xanylabeling_data/models/${model_name}` 中是否已有模型文件；存在时直接加载，否则自动下载到该目录。使用 `--work-dir` 时，数据目录位于指定工作目录下。
 
-注意，当前软件内置的所有模型默认托管在 GitHub 的 release 仓库。因此，用户需要配置科学上网条件，并保持网络畅通，否则可能会下载失败。
+内置模型通常从配置文件指定的 URL 下载，部分模型也可切换至 ModelScope 下载源。请确保当前网络可以访问对应地址。
 
 对由于网络问题未能成功加载模型的用户，可选择离线下载并手动加载模型或修改模型下载源。
 
 ### 离线下载模型
 
-- 打开 [model_zoo.md](./model_zoo.md) 文件，找到欲加载模型对应的配置文件。
+- 打开[模型列表](./model_zoo.md)，找到目标模型对应的配置文件。
 - 编辑配置文件，修改模型路径，并根据需要选择性地修改其他超参数。
 - 打开工具界面，点击**加载自定义模型**，选择配置文件所在路径即可。
 
 ### 修改模型下载源
 
-详情可参考 [user_guide.md](./user_guide.md) 中的 `7.7 模型下载源配置` 章节。
+详情参见《用户手册》中的[模型下载源配置](./user_guide.md#77-模型下载源配置)。
 
 ## 加载已适配的用户自定义模型
 
-> **已适配模型**是指当前已经在 X-AnyLabeling 中适配过的模型，无须用户编写模型推理代码。适配模型列表可参考 [模型列表](../../docs/zh_cn/model_zoo.md)。
+> **已适配模型**是指 X-AnyLabeling 已实现推理代码的模型。使用这类模型时，只需准备模型文件和配置文件。适配模型参见[模型列表](./model_zoo.md)。
 
 本教程中，我们以 [YOLOv5s](https://github.com/ultralytics/yolov5) 模型为例，详细介绍如何加载自定义模型。
 
 **a. 模型转换**
 
-假设您已经在本地训练好一个模型，我们首先可以将 `PyTorch` 训练模型转换为 X-AnyLabeling 默认的 `ONNX` 文件格式（可选项）。具体地，执行：
+假设已经在本地训练好模型，可先将 PyTorch 权重导出为 X-AnyLabeling 默认使用的 ONNX 格式：
 
 ```bash
 python export.py --weights yolov5s.pt --include onnx
 ```
 
-注意：当前版本暂不支持**动态输入**，因此请勿设置 `--dynamic` 参数。
+导出参数应与所选模型适配器的输入和输出约定一致。除非对应实现明确支持动态尺寸，否则建议使用固定输入尺寸。
 
 此外，强烈建议通过 [Netron](https://netron.app/) 在线工具导入上一步导出的 `*.onnx` 文件，检查输入和输出节点信息，确保维度等信息符合预期。
 
@@ -49,9 +49,9 @@ python export.py --weights yolov5s.pt --include onnx
 
 **b. 模型配置**
 
-准备好 `onnx` 文件后，您可以浏览 [模型列表](../../docs/zh_cn/model_zoo.md) 文件，找到并拷贝对应模型的配置文件。
+准备好 ONNX 文件后，在[模型列表](./model_zoo.md)中找到并复制对应模型的配置文件。
 
-同样，以 [yolov5s.yaml](../../anylabeling/configs/auto_labeling/yolov5s.yaml) 为例，我们可以看下其内容：
+以 [yolov5s.yaml](../../anylabeling/configs/auto_labeling/yolov5s.yaml) 为例，其内容如下：
 
 ```YAML
 type: yolov5
@@ -87,8 +87,8 @@ classes:
 
 | 字段 | 描述 |
 |------|------|
-| `filter_classes` | 指定推理时使用的类别| 
-| `agnostic` | 是否使用单类 NMS|
+| `filter_classes` | 指定推理时使用的类别 |
+| `agnostic` | 是否使用类别无关的 NMS |
 
 一个典型的参考示例如下：
 
@@ -168,7 +168,7 @@ model_path: /path/to/yolo26s.engine
 engine: trt
 ```
 
-随后按照 [离线下载模型](#离线下载模型) 的流程，在界面上通过**加载自定义模型**导入该 yaml 即可使用 TensorRT 推理。
+随后按照[离线下载模型](#离线下载模型)的流程，通过**加载自定义模型**导入该 YAML 文件，即可使用 TensorRT 推理。
 
 **c. 模型加载**
 
@@ -189,11 +189,11 @@ engine: trt
 
 导出 `ONNX` 模型，确保输出节点的维度为 `[1, C, H, W]`，其中 `C` 为总的类别数（包含背景类）。
 
-> **友情提示**：导出 `ONNX` 模型并非必选项，用户也可以根据需要选择其它模型格式，如 `PyTorch`、 `OpenVINO` 或 `TensorRT` 等。以 `Segment-Anything-2` 的视频目标追踪为例，可参考 [安装指南](../../examples/interactive_video_object_segmentation/README.md) 章节、配置文件定义 [sam2_hiera_base_video.yaml](../../anylabeling/configs/auto_labeling/sam2_hiera_base_video.yaml) 及相应的实现 [segment_anything_2_video.py](../../anylabeling/services/auto_labeling/segment_anything_2_video.py)。
+> ONNX 并非唯一可用格式，也可以根据适配器需要使用 PyTorch、OpenVINO 或 TensorRT。以 SAM 2 视频目标追踪为例，可参考[安装指南](../../examples/interactive_video_object_segmentation/sam2/README.md)、[配置文件](../../anylabeling/configs/auto_labeling/sam2_hiera_base_video.yaml)和[推理实现](../../anylabeling/services/auto_labeling/segment_anything_2_video.py)。
 
 **b. 定义配置文件**
 
-首先，在[配置文件目录](../../anylabeling/configs/auto_labeling)下，新增一个配置文件，如`unet.yaml`：
+首先，在[配置文件目录](../../anylabeling/configs/auto_labeling)下新增 `unet.yaml`：
 
 ```YAML
 type: unet
@@ -214,9 +214,9 @@ classes:
 |-----|--------|
 | `type` | 指定模型类型，确保与现有模型类型不重复，以维护模型标识的唯一性。|
 | `name` | 定义模型索引，用于内部引用和管理，避免与现有模型的索引名称冲突。|
-| `display_name` | 展示在用户界面的模型名称，便于识别和选择，同样需保证其独特性，不与其它模型重名。|
+| `display_name` | 显示在用户界面中的模型名称，不得与其他模型重名。 |
 
-以上三个字段为不可缺省字段。最后，可根据实际需要添加其它字段，如模型提供商、模型路径、模型超参等。
+以上三个字段不可省略。还可根据需要添加模型提供商、模型路径和模型超参数等字段。
 
 **c. 添加配置文件**
 
@@ -231,9 +231,9 @@ classes:
 
 ```
 
-**d. 配置UI组件**
+**d. 配置 UI 组件**
 
-这一步可根据需要自行添加UI组件，只需将模型名称添加到对应的列表即可，具体可参考此[文件](../../anylabeling/services/auto_labeling/__init__.py) 中的定义。
+根据模型需要，将模型类型添加到 [auto_labeling/__init__.py](../../anylabeling/services/auto_labeling/__init__.py) 中对应的 UI 控件列表。
 
 **e. 定义推理服务**
 
@@ -370,7 +370,7 @@ class UNet(Model):
 
 **f. 添加至模型管理**
 
-完成上述步骤后，我们需要打开 [模型配置文件](../../anylabeling/services/auto_labeling/__init__.py) 中，并将对应的模型类型字段（如`unet`）添加至 `_CUSTOM_MODELS` 列表中，并根据需要在不同配置项中添加对应的模型名称。
+完成上述步骤后，将模型类型（如 `unet`）添加到 [auto_labeling/__init__.py](../../anylabeling/services/auto_labeling/__init__.py) 的 `_CUSTOM_MODELS` 列表，并根据需要加入相应的 UI 控件列表。
 
 > **提示**: 如果你不知道如何实现对应的控件，可打开搜索面板，输入相应关键字，查看所有可用控件的实现逻辑。
 
@@ -422,17 +422,17 @@ class ModelManager(QObject):
     ...
 ```
 
-⚠️注意：
-
-- 模型类型字段需要与上述步骤**b. 定义配置文件**中定义的配置文件中的 `type` 字段保持一致。
-- 如果是基于 `SAM` 的模式，请将 `self.auto_segmentation_model_unselected.emit()` 替换为 `self.auto_segmentation_model_selected.emit()` 以触发相应的功能。
+> [!NOTE]
+> 模型类型必须与 **b. 定义配置文件**中的 `type` 字段一致。如果模型使用 SAM 交互模式，应触发 `self.auto_segmentation_model_selected`，而不是 `self.auto_segmentation_model_unselected`。
 
 
 # 模型导出
 
 > 本章节将向您展示一些将自定义模型转换为 ONNX 模型的具体示例，以便您快速集成到 X-AnyLabeling 中。
 
-## Classification
+更多模型导出示例请参考 [`tools/onnx_exporter`](../../tools/onnx_exporter/) 目录。
+
+## 图像分类
 
 ### [InternImage](https://github.com/OpenGVLab/InternImage)
 
@@ -458,7 +458,7 @@ InternImage 引入了一个大规模卷积神经网络 (CNN) 模型，利用可�
 
 请参考此 [教程](../../tools/onnx_exporter/export_pulc_attribute_model_onnx.py)。
 
-## Object Detection
+## 目标检测
 
 ### [RF-DETR](https://github.com/roboflow/rf-detr)
 
@@ -496,12 +496,9 @@ python export.py --weights yolov7.pt --img-size 640 --grid
 | 发表时间       | NeurIPS'23                                                          |
 
 ```bash
-$ git clone https://github.com/huawei-noah/Efficient-Computing.git
-$ cd Detection/Gold-YOLO
-$ python deploy/ONNX/export_onnx.py --weights Gold_n_dist.pt --simplify --ort
-                                              Gold_s_pre_dist.pt                     
-                                              Gold_m_pre_dist.pt
-                                              Gold_l_pre_dist.pt
+git clone https://github.com/huawei-noah/Efficient-Computing.git
+cd Detection/Gold-YOLO
+python deploy/ONNX/export_onnx.py --weights Gold_n_dist.pt --simplify --ort
 ```
 
 ### [DAMO-YOLO](https://github.com/tinyvision/DAMO-YOLO)
@@ -515,9 +512,9 @@ $ python deploy/ONNX/export_onnx.py --weights Gold_n_dist.pt --simplify --ort
 | 发表时间       | Arxiv'22                                                            |
 
 ```bash
-$ git clone https://github.com/tinyvision/DAMO-YOLO.git
-$ cd DAMO-YOLO
-$ python tools/converter.py -f configs/damoyolo_tinynasL25_S.py -c damoyolo_tinynasL25_S.pth --batch_size 1 --img_size 640
+git clone https://github.com/tinyvision/DAMO-YOLO.git
+cd DAMO-YOLO
+python tools/converter.py -f configs/damoyolo_tinynasL25_S.py -c damoyolo_tinynasL25_S.pth --batch_size 1 --img_size 640
 ```
 
 ### [RT-DETR](https://github.com/lyuwenyu/RT-DETR)
@@ -579,7 +576,19 @@ python3 ultralytics/utils/export_onnx.py
 | 发表单位       | 中国科学技术大学                                                    |
 | 发表时间       | ICLR'25 Spotlight                                                  |
 
-请参考此[教程](../../tools/onnx_exporter/export_dfine_onnx.py)。
+请参考[导出脚本](../../tools/onnx_exporter/export_dfine_onnx.py)。
+
+### [D-FINE-seg](https://github.com/ArgoHA/D-FINE-seg)
+
+`D-FINE-seg` 在 D-FINE 检测架构上引入轻量级实例分割头，通过融合多尺度特征与查询掩码嵌入生成高质量实例掩码，并支持多后端实时部署。该模型提供 N、S、M、L 和 X 五种不同规模，以适应不同的精度与性能需求。
+
+| 属性           | 值                                                                 |
+|----------------|--------------------------------------------------------------------|
+| 论文标题       | D-FINE-seg: Object Detection and Instance Segmentation Framework with Multi-Backend Deployment |
+| 作者           | Argo Saakyan & Dmitry Solntsev                                     |
+| 发表时间       | Arxiv'26                                                           |
+
+请参考[官方导出说明](https://github.com/ArgoHA/D-FINE-seg#export)。
 
 ### [DEIMv2](https://github.com/Intellindust-AI-Lab/DEIMv2)
 
@@ -591,9 +600,9 @@ python3 ultralytics/utils/export_onnx.py
 | 发表单位       | 英特灵达 & 厦门大学                                 |
 | 发表时间       | Arxiv'25                                                 |
 
-请参考此[教程](../../tools/onnx_exporter/export_deimv2_onnx.py)。
+请参考[导出脚本](../../tools/onnx_exporter/export_deimv2_onnx.py)。
 
-## Segment Anything
+## Segment Anything 系列
 
 ### [SAM](https://github.com/vietanhdev/samexporter)
 
@@ -645,9 +654,7 @@ python3 ultralytics/utils/export_onnx.py
 
 ### [EdgeSAM](https://github.com/chongzhou96/EdgeSAM)
 
-`EdgeSAM` 是任意物体分割模型 (SAM) 的加速变体，优化用于在边缘设备上高效执行，同时性能几乎没有妥协。它在性能上比原版 SAM
-
- 提升了 40 倍，在边缘设备上的速度比 MobileSAM 快 14 倍，同时在 COCO 和 LVIS 数据集上的 mIoU 分别提高了 2.3 和 3.2。EdgeSAM 也是第一个在 iPhone 14 上能够运行超过 30 FPS 的 SAM 变体。
+`EdgeSAM` 是适用于边缘设备的 SAM 加速变体。根据其论文报告，它比原版 SAM 快 40 倍，在边缘设备上比 MobileSAM 快 14 倍，同时在 COCO 和 LVIS 数据集上的 mIoU 分别提高 2.3 和 3.2，并可在 iPhone 14 上达到 30 FPS 以上。
 
 | 属性           | 值                                                                 |
 |----------------|--------------------------------------------------------------------|
@@ -659,7 +666,7 @@ python3 ultralytics/utils/export_onnx.py
 
 ## Grounding
 
-### [Grounding DINO](https://github.com/IDEA-Research/GroundingDINO) 
+### [Grounding DINO](https://github.com/IDEA-Research/GroundingDINO)
 
 `Grounding DINO` 是一款最先进的 (SOTA) 零样本目标检测模型，擅长检测训练中未定义的物体。其独特的能力使其能够适应新物体和场景，使其在现实世界应用中具有高度的多样性。它在指称表达理解 (REC) 方面表现出色，能够基于文本描述识别和定位图像中的特定物体或区域。Grounding DINO 简化了目标检测，通过消除手工设计的组件（如非极大值抑制 (NMS)），简化了模型架构，增强了效率和性能。
 
@@ -682,9 +689,9 @@ python3 ultralytics/utils/export_onnx.py
 | 发表时间       | Arxiv'24                                                        |
 
 ```bash
-$ git clone https://github.com/ultralytics/ultralytics.git
-$ cd ultralytics
-$ yolo export model=yolov8s-worldv2.pt format=onnx opset=13 simplify
+git clone https://github.com/ultralytics/ultralytics.git
+cd ultralytics
+yolo export model=yolov8s-worldv2.pt format=onnx opset=13 simplify
 ```
 
 ### [GeCo](https://github.com/jerpelhan/GeCo.git)
@@ -699,9 +706,9 @@ $ yolo export model=yolov8s-worldv2.pt format=onnx opset=13 simplify
 
 请参考此 [教程](../../tools/onnx_exporter/export_geco_onnx.py)。
 
-## Image Tagging
+## 图像标签
 
-### [Recognize Anything](https://github.com/xinyu1205/Tag2Text) 
+### [Recognize Anything](https://github.com/xinyu1205/Tag2Text)
 
 `RAM` 是一款以其卓越图像识别能力著称的强大图像打标签模型。RAM 在零样本泛化方面表现出色，具有成本效益高和可复现的优点，依赖于开源和无注释数据集。RAM 的灵活性使其适用于广泛的应用场景，成为各种图像识别任务中的宝贵工具。
 

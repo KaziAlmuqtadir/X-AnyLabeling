@@ -1,14 +1,15 @@
 import os
 import copy
+import re
 import time
-import yaml
 import importlib.resources as pkg_resources
 from threading import Lock, Event
 
 from PyQt6.QtCore import QObject, QThread, pyqtSignal, pyqtSlot
 
 import anylabeling.configs as auto_labeling_configs
-from anylabeling.utils import GenericWorker
+from anylabeling.services.auto_labeling.worker import GenericWorker
+from anylabeling.services.auto_labeling.model import load_model_config
 from anylabeling.views.labeling.logger import logger
 from anylabeling.config import get_config, save_config
 from anylabeling.services.auto_labeling.types import (
@@ -36,6 +37,7 @@ class ModelManager(QObject):
     """Model manager"""
 
     MAX_NUM_CUSTOM_MODELS = 5
+    CUSTOM_MODEL_NAME_PATTERN = re.compile(r"[A-Za-z0-9._-]+")
     model_configs_changed = pyqtSignal(list)
     new_model_status = pyqtSignal(str)
     model_loaded = pyqtSignal(dict)
@@ -68,10 +70,12 @@ class ModelManager(QObject):
     def load_model_configs(self):
         """Load model configs"""
         # Load list of default models
-        with pkg_resources.open_text(
-            auto_labeling_configs, "models.yaml"
-        ) as f:
-            model_list = yaml.safe_load(f)
+        with (
+            pkg_resources.files(auto_labeling_configs)
+            .joinpath("models.yaml")
+            .open(encoding="utf-8") as f
+        ):
+            model_list = load_model_config(f)
 
         # Load list of custom models
         custom_models = get_config().get("custom_models", [])
@@ -101,16 +105,23 @@ class ModelManager(QObject):
                     auto_labeling_configs
                 ).joinpath("auto_labeling", config_file_name)
                 config_content = resource_path.read_text(encoding="utf-8")
-                model_config = yaml.safe_load(config_content)
+                model_config = load_model_config(config_content)
                 model_config["config_file"] = str(config_file)
             else:  # Config file is in local file system
                 with open(config_file, "r", encoding="utf-8") as f:
-                    model_config = yaml.safe_load(f)
+                    model_config = load_model_config(f)
                     model_config["config_file"] = os.path.normpath(
                         os.path.abspath(config_file)
                     )
             is_custom = model.get("is_custom_model", False)
             model_config["is_custom_model"] = is_custom
+            if is_custom and not self.is_valid_custom_model_name(
+                model_config.get("name")
+            ):
+                logger.error(
+                    "Skipping custom model with an invalid 'name' field."
+                )
+                continue
             if is_custom and not model_config["name"].startswith("_custom_"):
                 model_config["name"] = f"_custom_{model_config['name']}"
 
@@ -129,6 +140,14 @@ class ModelManager(QObject):
 
         self.model_configs = model_configs
         self.model_configs_changed.emit(model_configs)
+
+    @classmethod
+    def is_valid_custom_model_name(cls, name):
+        return (
+            isinstance(name, str)
+            and name not in (".", "..")
+            and cls.CUSTOM_MODEL_NAME_PATTERN.fullmatch(name) is not None
+        )
 
     def update_model_config(self, config_file, key, value):
         """Update a specific key in a model's configuration."""
@@ -211,7 +230,7 @@ class ModelManager(QObject):
         model_config = {}
         try:
             with open(config_file, "r", encoding="utf-8") as f:
-                model_config = yaml.safe_load(f)
+                model_config = load_model_config(f)
                 model_config["config_file"] = os.path.abspath(config_file)
         except Exception as e:
             logger.error(
@@ -259,6 +278,18 @@ class ModelManager(QObject):
             self.model_loaded.emit({})
             return False
 
+        if not self.is_valid_custom_model_name(model_config["name"]):
+            logger.error(
+                "An error occurred while loading the custom model: "
+                "The 'name' field must be a single path segment containing "
+                "only letters, numbers, dots, underscores, and hyphens."
+            )
+            self.new_model_status.emit(
+                self.tr("Error in loading custom model: Invalid model name.")
+            )
+            self.model_loaded.emit({})
+            return False
+
         # Add or replace custom model
         custom_models = get_config().get("custom_models", [])
         matched_index = None
@@ -290,6 +321,48 @@ class ModelManager(QObject):
         # Load model
         self.load_model(model_config["config_file"])
 
+        return True
+
+    def remove_custom_model(self, model_name):
+        """Forget a custom model without deleting its config or weights."""
+        if not model_name.startswith("_custom_"):
+            return False
+        if self.is_model_download_running() or (
+            self.model_execution_thread is not None
+            and self.model_execution_thread.isRunning()
+        ):
+            return False
+
+        config = get_config()
+        config["custom_models"] = [
+            model
+            for model in config.get("custom_models", [])
+            if (
+                model.get("name", "")
+                if model.get("name", "").startswith("_custom_")
+                else f"_custom_{model.get('name', '')}"
+            )
+            != model_name
+        ]
+        save_config(config)
+
+        if (
+            self.loaded_model_config is not None
+            and self.loaded_model_config.get("name") == model_name
+        ):
+            self.unload_model()
+            self.model_loaded.emit({})
+            self.new_model_status.emit(self.tr("No model selected."))
+
+        self.model_configs = [
+            model
+            for model in self.model_configs
+            if not (
+                model.get("is_custom_model", False)
+                and model.get("name") == model_name
+            )
+        ]
+        self.model_configs_changed.emit(self.model_configs)
         return True
 
     def load_model(self, config_file):
@@ -1444,6 +1517,26 @@ class ModelManager(QObject):
                     exc_info=True,
                 )
                 return
+        elif model_config["type"] == "rio_detr":
+            from .rio_detr import RiODETR
+
+            try:
+                model_config["model"] = RiODETR(
+                    model_config, on_message=self.new_model_status.emit
+                )
+                self.auto_segmentation_model_unselected.emit()
+                logger.info(
+                    f"✅ Model loaded successfully: {model_config['type']}"
+                )
+            except Exception as e:  # noqa
+                template = "Error in loading model: {error_message}"
+                translated_template = self.tr(template)
+                error_text = translated_template.format(error_message=str(e))
+                self.new_model_status.emit(error_text)
+                logger.error(
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
+                )
+                return
         elif model_config["type"] == "deimv2":
             from .deimv2 import DEIMv2
 
@@ -2217,6 +2310,26 @@ class ModelManager(QObject):
                 logger.error(
                     f"❌ Error in loading model: {model_config['type']} with error: {str(e)}",
                     exc_info=True,
+                )
+                return
+        elif model_config["type"] == "dfine_seg":
+            from .dfine_seg import DFINESeg
+
+            try:
+                model_config["model"] = DFINESeg(
+                    model_config, on_message=self.new_model_status.emit
+                )
+                self.auto_segmentation_model_unselected.emit()
+                logger.info(
+                    f"✅ Model loaded successfully: {model_config['type']}"
+                )
+            except Exception as e:  # noqa
+                template = "Error in loading model: {error_message}"
+                translated_template = self.tr(template)
+                error_text = translated_template.format(error_message=str(e))
+                self.new_model_status.emit(error_text)
+                logger.error(
+                    f"❌ Error in loading model: {model_config['type']} with error: {str(e)}"
                 )
                 return
         elif model_config["type"] == "yolo12":

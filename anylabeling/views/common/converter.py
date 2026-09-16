@@ -194,7 +194,7 @@ def list_supported_tasks():
     import_tasks = {k: v for k, v in SUPPORTED_TASKS.items() if "2xlabel" in k}
     export_tasks = {k: v for k, v in SUPPORTED_TASKS.items() if "xlabel2" in k}
 
-    print(colored("📥 IMPORT TO XLABEL", "green", attrs=["bold"]))
+    print(colored("IMPORT TO XLABEL", "green", attrs=["bold"]))
     print(colored("-" * 80, "green"))
     for task_name, task_info in import_tasks.items():
         modes_str = (
@@ -202,7 +202,7 @@ def list_supported_tasks():
         )
         print(f"  • {colored(task_name, 'yellow')}{modes_str}")
 
-    print(colored("\n📤 EXPORT FROM XLABEL", "blue", attrs=["bold"]))
+    print(colored("\nEXPORT FROM XLABEL", "blue", attrs=["bold"]))
     print(colored("-" * 80, "blue"))
     for task_name, task_info in export_tasks.items():
         modes_str = (
@@ -1514,7 +1514,3 @@ def run_conversion(
 
         traceback.print_exc()
         sys.exit(1)
-
-
-if __name__ == "__main__":
-    run_conversion()

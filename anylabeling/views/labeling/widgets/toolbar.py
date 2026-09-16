@@ -57,6 +57,14 @@ class ToolBar(QtWidgets.QFrame):
                 padding: 0px;
                 margin: 0px;
             }}
+            ToolBar QToolButton:hover {{
+                border: 1px solid {t["border_light"]};
+                border-radius: 6px;
+                background: {t["surface_hover"]};
+            }}
+            ToolBar QToolButton:pressed {{
+                background: {t["surface_pressed"]};
+            }}
             {separator_qss}
             """)
 

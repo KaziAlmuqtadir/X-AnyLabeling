@@ -1,6 +1,6 @@
 # 用户手册
 
-本指南提供了使用 X-AnyLabeling 的全面指导，涵盖了从基本的文件管理、标注任务到高级功能和自定义的所有内容。
+本手册介绍 X-AnyLabeling 的文件管理、对象编辑、标签转换、界面工具、用户配置和标注任务。
 
 ## 0. 目录
 
@@ -10,7 +10,7 @@
   - [1.3 切换图片](#13-切换图片)
   - [1.4 保存标签数据](#14-保存标签数据)
   - [1.5 保存图像数据](#15-保存图像数据)
-- [2. 对象](#2-对象)
+- [2. 编辑](#2-编辑)
   - [2.1 创建对象](#21-创建对象)
   - [2.2 编辑对象](#22-编辑对象)
   - [2.3 编辑标签](#23-编辑标签)
@@ -23,6 +23,7 @@
   - [3.4 十字瞄准线](#34-十字瞄准线)
   - [3.5 导航器](#35-导航器)
   - [3.6 对比视图](#36-对比视图)
+  - [3.7 图片标签](#37-图片标签)
 - [4. 标签导入导出](#4-标签导入导出)
   - [4.1 YOLO标签](#41-yolo标签)
   - [4.2 VOC标签](#42-voc标签)
@@ -54,6 +55,7 @@
   - [7.6 对象属性自定义](#76-对象属性自定义)
   - [7.7 模型下载源配置](#77-模型下载源配置)
   - [7.8 主题设置](#78-主题设置)
+  - [7.9 字体设置](#79-字体设置)
 - [8. 任务](#8-任务)
   - [8.1 图像分类](#81-图像分类)
   - [8.2 目标检测](#82-目标检测)
@@ -94,7 +96,7 @@ X-AnyLabeling 提供数据删除功能，具体操作如下：
 
 ### 1.3 切换图片
 
-在 X-AnyLabeling 中，用户可以通过快捷键 (A) 和 (D) 快速切换到上一张或下一张图片。
+在 X-AnyLabeling 中，按 `A` 和 `D` 可快速切换到上一张或下一张图片。
 
 除了常规的切换图片操作外，还支持以下几种方式：
 
@@ -116,10 +118,11 @@ X-AnyLabeling 默认开启自动保存功能，用户在初次启动界面时，
 
 标签文件默认保存在当前图片目录下，文件格式为 `*.json`，模板如下：
 
-```json
+```jsonc
 {
   "version": "${version}", // X-AnyLabeling 版本号
   "flags": {},             // 图片级标志 (如果存在)
+  "tags": ["a", "b", "c"], // 有序的图片级开放词表标签
   "shapes": [              // 标注的对象列表
     {
       "label": "${label}",        // 类别标签
@@ -192,25 +195,39 @@ X-AnyLabeling 默认开启自动保存功能，用户在初次启动界面时，
 | `shape_type`  | 字符串 | 对象类型，例如 `"rectangle"`、`"polygon"` 等。              |
 | `flags`       | 字典  | 附加的标志信息，用于存储额外的状态或属性，若无此信息则为 `null`。                 |
 | `attributes`  | 字典  | 对象的属性信息，可以包含任意键值对，若无此信息则为空字典 `{}`。                   |
-| `kie_linking` | 列表  | 对象间的连接信息，可包含多对连接，例如 `[[1,2],[3,4]]`，若无此信息则为空字典 `[]`。 |
+| `kie_linking` | 列表  | 对象间的连接信息，可包含多对连接，例如 `[[1, 2], [3, 4]]`，若无此信息则为空列表 `[]`。 |
 | `cuboid3d`    | 字典  | 仅 `cuboid` 使用的 3D 元数据，包含 `version`、`mode`、`vertices2d_order`、`depth_vector`、`source`，用于记录前后面映射和深度向量。 |
 
 
-此外，对于一些特殊的属性定义，可参考此[文件](../../anylabeling/views/labeling/shape.py)。
+特殊字段的定义参见 [Shape](../../anylabeling/views/labeling/shape.py) 类。
 
-当前，X-AnyLabeling 支持创建以下对象：
+当前，用户可通过左侧工具栏中的对应功能选项、画布右键菜单或快捷键创建以下对象：
 
-- **rectangle**（R）：通过左键单击开始绘制，移动光标，左键再次单击结束矩形框绘制；
-- **rotation**（O）：通过左键单击开始绘制，移动光标，左键再次单击先生成一个水平/竖直方向的旋转框；如需调整角度，可在编辑模式下选中该对象后按 `Z`、`X`、`C`、`V` 旋转；
-- **polygon**（P）：通过左键单击开始绘制，沿着物体边缘点击添加分割点，光标移动到起始顶点处单击即可结束绘制。当前最少需绘制 3 个顶点。另外支持画笔模式（Ctrl+N），激活后单击放置起始点，移动鼠标即可自动沿轨迹添加多边形顶点，光标移至起始点附近自动闭合。画笔点间距可通过 `Settings > Canvas > brush.point_distance` 调整。
-- **quadrilateral**（T）：通过左键单击开始绘制，依次点击四个顶点，最后一次单击即可结束四边形绘制；
-- **point**：通过左键单击即可直接创建关键点；
-- **line**：通过左键单击开始绘制，移动光标，左键再次单击即可结束单线段绘制；按住 `Shift` 键可将线段吸附为水平或竖直方向；
-- **linestrip**：通过左键单击开始绘制，移动光标再次单击创建线段，左键双击即可结束多线段绘制；绘制每一段时按住 `Shift` 键可将当前线段吸附为水平或竖直方向；
-- **circle**：通过左键单击开始绘制，移动光标确定半径，左键再次单击即可结束圆形绘制；
-- **cuboid**（Ctrl+R）：先按矩形方式确定正面四点（前面），系统再基于 `canvas.cuboid.default_depth_vector` 自动生成背面四点（可在 `Settings > Canvas > Cuboid` 中调整）；当深度过小时会按 `canvas.cuboid.min_depth` 自动约束。
+| 对象类型 | 快捷键 | 绘制方式 |
+| --- | --- | --- |
+| `rectangle` | `R` | 左键单击确定第一个角点，移动光标后再次单击确定对角点。 |
+| `rotation` | `O` | 按矩形方式创建水平或竖直旋转框；进入编辑模式并选中对象后，可按 `Z`、`X`、`C`、`V` 调整角度。 |
+| `polygon` | `P` | 沿对象边缘单击添加顶点，单击起始顶点或双击最后一个顶点结束绘制，至少需要 3 个顶点。 |
+| `quadrilateral` | `T` | 依次单击四个顶点，第四次单击后自动结束绘制。 |
+| `point` | `Shift+P` | 左键单击放置一个关键点。 |
+| `line` | `Shift+L` | 左键单击确定起点，移动光标后再次单击确定终点；绘制时按住 `Shift` 可吸附为水平或竖直线段。 |
+| `linestrip` | `Shift+S` | 左键单击依次添加折线顶点，双击结束；绘制每一段时按住 `Shift` 可吸附为水平或竖直线段。 |
+| `circle` | `Shift+C` | 左键单击确定圆心，移动光标确定半径，再次单击结束绘制。 |
+| `cuboid` | `Ctrl+R` | 按矩形方式确定正面，系统根据 `canvas.cuboid.default_depth_vector` 生成背面；可在 `Settings > Canvas > Cuboid` 中调整相关参数，深度过小时会按 `canvas.cuboid.min_depth` 自动约束。 |
 
-用户可通过左侧菜单栏中的对应功能选项、鼠标右键或快捷键进行操作。
+此外，对于多边形对象，X-AnyLabeling 还支持以下两种辅助创建方式：
+
+**画笔模式**（`Ctrl+N`）：单击确定起点后，沿对象边缘移动鼠标即可自动添加顶点；移动回起点附近时会闭合轮廓并生成 `polygon`。
+
+<p align="center">
+  <img src="../../assets/resources/brush_polygon.gif" alt="在画笔模式下沿对象边界移动光标创建多边形">
+</p>
+
+**魔术棒**（`Shift+W`）：在目标上按住鼠标左键，可预览与起始像素连通且颜色相近的区域；保持按下并向任意方向拖动可增大颜色容差。释放左键只会保留预览，不会创建对象；单击右键可确认生成 `polygon`，按 `Esc` 可取消。
+
+<p align="center">
+  <img src="../../assets/resources/magic_wand.gif" alt="使用魔术棒根据连通的相似颜色区域创建多边形">
+</p>
 
 ### 2.2 编辑对象
 
@@ -219,7 +236,15 @@ X-AnyLabeling 默认开启自动保存功能，用户在初次启动界面时，
 - **绘制模式**：在绘制状态下，可进行对象的快速创建；
 - **编辑模式**：在编辑状态下，可进行对象的编辑（Ctrl+E）、撤销（Ctrl+Z）、复制（Ctrl+C）、粘贴（Ctrl+V）、删除（Delete）、移动、缩放、旋转等操作。
 
-用户可通过快捷键 `Ctrl+J` 在绘制模式与编辑模式之间快速切换。此外：
+用户可通过快捷键 `Ctrl+J` 在绘制模式与编辑模式之间快速切换。
+
+在编辑模式下，单击画布中的对象即可选中。被选中对象的边框和控制点会高亮显示，右侧 **Shapes** 面板中的对应条目也会同步选中，方便在密集标注场景中确认当前对象。
+
+<p align="center">
+  <img src="../../assets/resources/canvas_shape_selection.gif" alt="在密集标注的画布中依次选中不同对象">
+</p>
+
+其他针对特定对象的操作如下：
 
 如需保护已完成的标注，可选择一个或多个对象，并在画布右键菜单中勾选 **锁定对象**。也可在右侧 **Shapes** 面板中右键单击已选中的条目，逐个反转其锁定状态；锁定条目会显示锁形图标。锁定对象仍可被选中并修改标签、属性等字段，但无法修改几何坐标或删除。
 
@@ -227,18 +252,27 @@ X-AnyLabeling 默认开启自动保存功能，用户在初次启动界面时，
 
 - 对于矩形框对象，可通过四个角点调整大小；支持多选并通过右键菜单中的合并选中对象进行合并。另外也支持鼠标滚轮编辑功能，可在 `Settings > Canvas > Wheel Editing > Enable Wheel Rectangle Editing` 中启用，或在用户配置文件中设置（`wheel_rectangle_editing`）：启用后，滚轮在矩形内可缩放，在外部可调整对应边缘位置。注意：当启用 `auto_highlight_shape` 时，滚轮矩形编辑将自动关闭。
 - 对于多边形框对象，可通过在边上拖拽新增一个新的顶点或按住 `Shift` 键配合鼠标左键移除选中顶点（编辑模式下）。当仅选中一个多边形或折线对象时，可按住 `Alt` 键进入橡皮擦模式，再按住鼠标左键拖过顶点以移除这些顶点，并自动拼接剩余点；若多边形少于 3 个点，或折线少于 2 个点，则会删除整个对象，并可通过撤销恢复。同样也支持多对象合并。当且仅当选中一个 `polygon` 时，还可通过工具栏、右键菜单或快捷键 `Shift+B` 启用 **编辑笔刷**：按住鼠标左键绘制可扩展区域，按住 `Ctrl` 绘制可擦除区域，滚轮可调整笔刷大小，并支持按笔画撤销和重做。编辑期间会锁定当前对象；右键或关闭编辑笔刷可提交修改，按 `Esc`、切换图片或切换其他工具会放弃修改并恢复原始多边形。笔刷采样间距和轮廓简化精度可在 `Settings > Canvas > Interaction > Brush` 中调整；简化精度设为 `0` 时保留提取出的轮廓点。
-- 对于旋转框对象，可先单击选中目标，并通过 `Z`、`X`、`C`、`V` 控制对象的旋转角度和方向。此外，也支持显示实时的旋转角度预览。
+- 对于旋转框对象，可先单击选中目标，拖拽对象上方的旋转控制点快速粗调角度，再通过 `Z`、`X`、`C`、`V` 对旋转角度和方向进行精细调整。此外，也支持显示实时的旋转角度预览。
 - 对于长方体（cuboid）对象，编辑时会显示 11 个控制点：正面 4 个顶点、正面 4 条边中点、可见背面 2 个顶点、可见背面 1 个边中点（深度控制点）。拖拽正面可整体移动对象；拖拽左/右/背面可调整形体；拖拽背面中点可调整深度，且会保持几何约束。背面哪一侧可见由深度向量方向自动决定。
 
-此外，用户可通过右键菜单中的 **复制坐标** 功能快速复制当前选中对象的坐标信息到剪贴板。对于矩形框，输出格式为 `[x1, y1, x2, y2]`（左上角和右下角坐标）；对于其它对象类型，输出格式为 `[x1, y1, x2, y2, x3, y3, ...]`（所有顶点坐标）。在编辑模式下，双击画布上的对象可快速打开标签编辑框；可在 `Settings > Canvas > Interaction > Double Click Edit Label` 中关闭，也可在配置中通过 `double_click_edit_label`（默认为 true）关闭该行为。
+此外，用户可通过右键菜单中的 **复制坐标** 功能快速复制当前选中对象的坐标信息到剪贴板。对于矩形框，输出格式为 `[x1, y1, x2, y2]`（左上角和右下角坐标）；对于其他对象类型，输出格式为 `[x1, y1, x2, y2, x3, y3, ...]`（所有顶点坐标）。在编辑模式下，双击画布上的对象可快速打开标签编辑框；可在 `Settings > Canvas > Interaction > Double Click Edit Label` 中关闭，也可在配置中通过 `double_click_edit_label`（默认为 `true`）关闭该行为。
 
 在放大画布并出现滚动条时，绘制对象过程中可按住 `Space` 并使用鼠标左键拖拽，临时平移画布，而无需退出绘制模式。
 
 > [!TIP]
-> X-AnyLabeling 提供两个便捷的对象浏览功能：
->
-> - **遍历放大对象**（Ctrl+Shift+N）：依次放大显示画布中的每个对象，便于逐一检查标注质量。
-> - **遍历选中对象**（Ctrl+Shift+C）：依次选中画布中的每个对象，便于快速编辑或管理标注。
+> 当图片中包含较多对象时，可使用以下浏览功能逐一检查，无需手动定位每个对象。
+
+**遍历放大对象**（`Ctrl+Shift+N`）会按顺序将每个对象移至画布中心并放大显示，适合检查边界、顶点等标注细节。再次触发该功能即可切换到下一个对象。
+
+<p align="center">
+  <img src="../../assets/resources/zoom_shapes.gif" alt="逐个居中并放大显示对象">
+</p>
+
+**遍历选中对象**（`Ctrl+Shift+C`）会在保持当前画布视图的同时，按顺序选中每个对象，适合快速检查或修改标签、属性及其他对象信息。再次触发该功能即可选中下一个对象。
+
+<p align="center">
+  <img src="../../assets/resources/loop_shapes.gif" alt="按顺序逐个选中对象">
+</p>
 
 ### 2.3 编辑标签
 
@@ -261,7 +295,7 @@ X-AnyLabeling 默认开启自动保存功能，用户在初次启动界面时，
 
 ### 2.5 搜索图片
 
-X-AnyLabeling v3.3.5+ 引入了强大的文件搜索功能，支持多种搜索模式，帮助用户快速定位目标图片。在右侧文件列表上方的搜索框中输入搜索条件，按回车键执行搜索。
+文件搜索功能支持多种搜索模式，帮助用户快速定位目标图片。在右侧文件列表上方的搜索框中输入搜索条件，按回车键执行搜索。
 
 也可以在文件列表中的图片上点击鼠标右键，打开快捷菜单执行复制操作：
 
@@ -307,7 +341,7 @@ X-AnyLabeling v3.3.5+ 引入了强大的文件搜索功能，支持多种搜索�
 
 ## 3. 视图
 
-本章节将向您展示如何在 X-AnyLabeling 中优化和自定义图像及标注对象的显示效果，包括画布和图片的可视化调整，以及对象信息的可视化设置，确保您的标注工作既高效又直观。
+本章介绍画布、图像和标注对象的显示设置。
 
 ### 3.1 画布可视化
 
@@ -323,12 +357,27 @@ X-AnyLabeling v3.3.5+ 引入了强大的文件搜索功能，支持多种搜索�
 
 X-AnyLabeling 支持调整当前图片的显示效果和标注对象的可见性。具体操作如下：
 
-- 在界面上方菜单栏中的 `视图` 下拉选项中选择 `亮度对比度` 选项，调整合适的亮度和对比度，以获得更好的视觉效果。
-- 如果想将此更改应用到全局，请勾选 `视图` 下拉选项中的 `保持当前亮度` 和 `保持当前对比度` 选项。
+通过画布左下角可折叠的 **Canvas Display** 面板，可以调整标注透明度和底图的显示效果。点击箭头按钮可折叠或展开面板。
 
-通过画布左下角可折叠的 **Canvas Display** 面板，可以快速调整标注透明度以及图片亮度和对比度。其中，**Opacity** 仅影响标注对象和掩码，标签文字保持清晰可见；**Brightness** 和 **Contrast** 用于调整底图。点击箭头按钮可折叠或展开面板。
+**标注透明度：**拖动 **Opacity** 滑块可调整标注对象和掩码的透明度。标签文字始终保持清晰可见，方便辨认对象类别。
 
-此外，当光标移动时，GUI 界面底部的信息栏会实时显示当前图片的文件名及标注进度。
+<p align="center">
+  <img src="../../assets/resources/annotation_opacity.gif" alt="通过 Canvas Display 面板调整标注对象和掩码的透明度">
+</p>
+
+**图片亮度：**拖动 **Brightness** 滑块可调亮或调暗底图，不会修改原始图片文件或标注数据。
+
+<p align="center">
+  <img src="../../assets/resources/image_brightness.gif" alt="通过 Canvas Display 面板调整图片亮度">
+</p>
+
+**图片对比度：**拖动 **Contrast** 滑块可增强或减弱底图的明暗层次，便于区分对象边界。
+
+<p align="center">
+  <img src="../../assets/resources/image_contrast.gif" alt="通过 Canvas Display 面板调整图片对比度">
+</p>
+
+如果想将此更改应用到全局，请勾选 `视图` 下拉选项中的 `保持当前亮度` 和 `保持当前对比度` 选项。
 
 ### 3.3 对象可视化
 
@@ -336,33 +385,39 @@ X-AnyLabeling 支持调整当前图片的显示效果和标注对象的可见性
 
 用户可以通过快捷键或者在界面上方菜单栏中的 `视图` 下拉选项中勾选相应功能来进行设置。
 
-同时，当用户将光标移至感兴趣的对象时，GUI 界面底部的信息栏会实时显示当前对象的宽度、高度等信息。
+当光标移至对象上方时，界面底部的信息栏会实时显示对象的宽度、高度等信息。
 
 > [!TIP]
-> 在 GUI 右侧的 `Shapes` 列表中，可通过右键菜单中的二级选项 `Filter by Label` 和 `Filter by Group ID` 快速筛选对象。  
+> 在界面右侧的 `Shapes` 列表中，可通过右键菜单中的 `Filter by Label` 和 `Filter by Group ID` 快速筛选对象。
 > 左侧工具栏提供了对象全局显隐切换按钮（`eye/hidden` 图标）：点击一次隐藏全部对象，再次点击恢复显示。
 
 ### 3.4 十字瞄准线
 
-关于十字瞄准线，用户可以通过界面上方菜单栏中的 `视图` 下拉选项中点击 `设置交叉线` 选项，调整当前十字瞄准线的宽度、透明度及颜色。
+按 `Ctrl+0` 打开 `Settings`，然后进入 `Canvas > Interaction > Crosshair`，可开启或关闭十字瞄准线，并调整宽度、颜色和透明度。
 
-此外，当光标移动时，GUI 界面底部的信息栏会实时显示位置坐标信息。
+十字瞄准线会贯穿当前可见画布并在光标位置相交；光标移动时，界面底部的信息栏会实时显示位置坐标。
 
 ### 3.5 导航器
 
-X-AnyLabeling v3.2.3+ 版本新增了导航器功能，当你处理高分辨率图像时，可以通过导航器快速定位到图像的任意区域。
+<p align="center">
+  <img src="../../assets/resources/navigator.png" alt="Crosshair Customization">
+</p>
 
-要打开导航器，只需在菜单栏点击 `视图` -> `导航器` 或直接按快捷键 `F9` 即可。导航器会在独立窗口中显示当前图像的缩略图，并用红色框标出你当前的可视区域。
+处理高分辨率图像时，可以通过导航器快速定位到图像的任意区域。
 
-你可以直接点击缩略图上的任意位置快速跳转，或者拖拽红色框来移动视野。导航器还会实时显示你标注的所有对象，让你对整体进度一目了然。
+在菜单栏中选择 `视图 > 导航器`，或按 `F9` 打开导航器。导航器会在独立窗口中显示当前图像的缩略图，并用红框标出当前可视区域。
+
+单击缩略图可快速跳转，拖动红框可移动视野。导航器也会实时显示当前图像中的标注对象。
 
 在导航器底部，你可以通过输入框精确设置缩放比例（支持1%到1000%），也可以拖拽滑动条进行调整。此外，无论是在主画布还是导航器窗口内，都可以直接用鼠标滚轮缩放。
 
-这个功能特别适合处理超大分辨率图像，既能保持局部的精细操作，又不会失去全局视野。
-
 ### 3.6 对比视图
 
-X-AnyLabeling 提供了对比视图功能，允许你通过分屏界面并排比较两张图像。该功能特别适用包括但不仅限于以下场景：
+<p align="center">
+  <img src="../../assets/resources/compare_view.gif" alt="Compare-View">
+</p>
+
+对比视图可通过分屏界面并排比较两张图像，适用于以下场景：
 
 - **红外与可见光融合**：对比热成像和 RGB 图像，识别在不同光谱下更清晰的目标。
 - **掩码预览**：实时查看分割结果与原图的叠加效果。
@@ -376,28 +431,39 @@ X-AnyLabeling 提供了对比视图功能，允许你通过分屏界面并排比
 4. 使用底部滑块调整分割位置，或按住 `Shift` 键并滚动鼠标滚轮移动分割线。
 5. 点击滑块上的关闭按钮（×）退出对比视图。
 
-> **注意**：对比图像必须与原图尺寸一致，否则将在状态栏显示警告信息。
+> [!NOTE]
+> 对比图像必须与原图尺寸一致，且文件名称要确保一致。
+
+### 3.7 图片标签
+
+通过 `视图` > `图片标签` 或快捷键 `Ctrl+Shift+T`，可以快速显示或隐藏画布下方的图片标签面板。
+
+图片标签功能支持以下操作：
+
+- 点击 `+` 新增标签，双击标签可编辑文本，拖动标签可调整顺序，也可通过关闭按钮删除单个标签。
+- 点击 `−` 进入批量模式，选择标签后通过 `Delete` 统一删除。
+- 点击 `C` 可将所有标签以逗号分隔格式复制到剪贴板，例如 `tag1,tag2,tag3`。
 
 ## 4. 标签导入导出
 
 现阶段，`X-AnyLabeling` 提供了多种主流标签文件的导入/导出功能，下面简单介绍使用步骤。
 
 > [!TIP]
-> 您也可以使用命令行工具进行批量转换！CLI 工具提供了更高效、更灵活的标签格式转换功能，特别适合大规模数据集的处理。详情请参考[命令行界面文档](./cli.md#3-标签格式转换命令)。
+> 也可以使用 CLI 批量转换标签格式，适合处理大型数据集。详情参见[命令行界面文档](./cli.md#3-标签格式转换命令)。
 
 ### 4.1 YOLO标签
 
-当前 X-AnyLabeling 最新版本支持一键导入/导出 YOLO 目标检测、实例分割、旋转框检测和关键点检测四大主流任务的标签文件（*.txt）。
+X-AnyLabeling 支持导入和导出 YOLO 目标检测、实例分割、旋转框检测及关键点检测标签（`*.txt`）。
 
 在导入/导出 YOLO 标注文件之前，需要准备一份标签配置文件，具体如下：
 
 1. 对于 YOLO 目标检测、实例分割和旋转框检测任务，请参考 [classes.txt](../../assets/classes.txt) 准备配置文件，每一行代表一个类别，编号从上至下从 0 开始依次递增。
 2. 对于 YOLO 关键点检测任务，请参考 [yolov8_pose.yaml](../../assets/yolov8_pose.yaml) 进行准备，其中 `has_visible` 参数请参考[官方定义](https://docs.ultralytics.com/datasets/pose/#ultralytics-yolo-format)。
 
-> 要以 YOLO-Pose 格式导出，您需要在标注过程中为每个组（检测框及其关键点）指定 group_id，以便 X-AnyLabeling 在导出时能够理解它们之间的从属关系。
+> 要导出 YOLO Pose 格式，需要为每组检测框及其关键点指定 `group_id`，以记录对象之间的从属关系。
 
 > [!NOTE]
-> 请勿将 YOLO 标签文件（*.txt）与图像文件放置到同一目录下。
+> 请勿将 YOLO 标签文件（`*.txt`）与图像文件放在同一目录下。
 
 **导入任务**：
 
@@ -420,7 +486,7 @@ X-AnyLabeling 提供了对比视图功能，允许你通过分屏界面并排比
 
 ### 4.2 VOC标签
 
-当前 X-AnyLabeling 最新版本支持一键导入/导出检测和分割任务相关的 Pascal-VOC 标签文件（*.xml）。
+X-AnyLabeling 支持导入和导出检测及分割任务的 Pascal VOC 标签文件（`*.xml`）。
 
 **导入任务**：
 
@@ -439,7 +505,7 @@ X-AnyLabeling 提供了对比视图功能，允许你通过分屏界面并排比
 
 ### 4.3 COCO标签
 
-当前 X-AnyLabeling 最新版本支持一键导入/导出目标检测、实例分割、关键点检测任务相关的 COCO 标签文件（*.json）。
+X-AnyLabeling 支持导入和导出目标检测、实例分割及关键点检测任务的 COCO 标签文件（`*.json`）。
 
 在导入/导出 COCO 标注文件之前，需要准备一份标签配置文件，具体如下：
 
@@ -452,7 +518,7 @@ X-AnyLabeling 提供了对比视图功能，允许你通过分屏界面并排比
 1. 点击上方菜单栏的 `上传` 按钮。
 2. 选择对应的任务。
 3. 上传准备好的配置文件。
-4. 选择标签文件所在目录，点击确定即可.
+4. 选择标签文件所在目录，点击确定。
 
 **导出任务**：
 
@@ -467,7 +533,7 @@ X-AnyLabeling 提供了对比视图功能，允许你通过分屏界面并排比
 
 ### 4.4 DOTA标签
 
-当前 X-AnyLabeling 最新版本支持一键导入/导出 DOTA 标签文件（*.txt），其标签格式定义为：
+X-AnyLabeling 支持导入和导出 DOTA 标签文件（`*.txt`），每行格式如下：
 
 > x1 y1 x2 y2 x3 y3 x4 y4 class_name difficult
 
@@ -484,17 +550,26 @@ X-AnyLabeling 提供了对比视图功能，允许你通过分屏界面并排比
 
 导出路径默认保存在当前图片目录的同级目录下的 `labelTxt` 文件夹内。
 
-> DOTA 标签文件样式可参考 [demo_obb.txt](../../assets/labelTxt/demo_obb.txt)。
-> instances_default
+> DOTA 标签文件示例参见 [demo_obb.txt](../../assets/labelTxt/demo_obb.txt)。
 
 ### 4.5 MASK标签
 
-当前 X-AnyLabeling 最新版本支持一键导入/导出语义分割任务相关的掩码标签文件（*.png）。
+X-AnyLabeling 支持导入和导出语义分割掩码（`*.png`）。
 
 在导入/导出掩码标注文件之前，需要准备好配置文件，具体如下：
 
 1. 对于彩色图颜色映射表文件，可参考 [mask_color_map.json](../../assets/mask_color_map.json)。
 2. 对于灰度图颜色映射表文件，可参考 [mask_grayscale_map.json](../../assets/mask_grayscale_map.json)。
+
+可选的 `label_priority` 对象用于处理多边形重叠。整数越大，类别优先级越高；未配置的类别默认优先级为 `0`。优先级相同时按照 XLABEL `shapes` 数组中的标注层级处理，列表中靠后的形状显示在上层。未配置 `label_priority` 时，仅使用标注层级顺序。该过程只影响导出的语义掩码，不会修改原始标注。
+
+```json
+{
+  "type": "grayscale",
+  "colors": {"Road": 1, "Car": 2, "Person": 3},
+  "label_priority": {"Road": 0, "Car": 10, "Person": 20}
+}
+```
 
 **导入任务**：
 
@@ -513,7 +588,7 @@ X-AnyLabeling 提供了对比视图功能，允许你通过分屏界面并排比
 
 ### 4.6 MOT标签
 
-当前 X-AnyLabeling 最新版本支持一键导入/导出多目标跟踪任务相关的标签文件。
+X-AnyLabeling 支持一键导入/导出多目标跟踪任务相关的标签文件。
 
 在导入/导出标注文件之前，需要准备好标签配置文件，具体可参考 [classes.txt](../../assets/classes.txt)，其中每一行代表一个类别，编号由上往下依次递增。
 
@@ -552,7 +627,7 @@ imext = .jpg          # 图片文件扩展名
 `det.txt` 文件包含检测结果信息，每一行代表一个检测框。以下是文件的具体内容和字段说明：
 
 ```txt
-帧号, 跟踪ID, 左上角x坐标, 左上角y坐标, 目标框宽度, 目标框高度, 置信度, <x>, <y>, <z> 
+帧号, 跟踪 ID, 左上角 x 坐标, 左上角 y 坐标, 目标框宽度, 目标框高度, 置信度, <x>, <y>, <z>
 ```
 
 最后三个字段用于 `MOT3D` 任务，此处默认为 **-1**。
@@ -562,34 +637,28 @@ imext = .jpg          # 图片文件扩展名
 `gt.txt` 文件包含跟踪的标注信息，每一行代表一个标注框。以下是文件的具体内容和字段说明：
 
 ```txt
-帧号, 跟踪ID, 左上角x坐标, 左上角y坐标, 目标框宽度, 目标框高度, 有效性标志, 类别ID, 可见率
+帧号, 跟踪 ID, 左上角 x 坐标, 左上角 y 坐标, 目标框宽度, 目标框高度, 有效性标志, 类别 ID, 可见率
 ```
 
 这里**有效性标志**表示当前目标轨迹是否有效，`0` 表示无效数据（ignore），`1` 表示有效数据（activate）。用户可通过标签管理器中的 `useDifficult` 标志位来设置，☑️ 代表当前目标轨迹无效。
 
 ---
 
-此外，针对 [MOTS](https://motchallenge.net/data/MOTS/) 数据集格式，X-AnyLabeling v2.4.0+ 版本提供对应的导出设置，具体可参考以下步骤实施：
-
-1. 点击上方菜单栏的 `导出`-`导出 MOTS 标签` 按钮。
-2. 上传准备好的配置文件。
-3. 选择保存路径，点击确定即可。
-
-需要注意的是，默认导出的 mots 标签并非最终官方数据集格式，这里我们提供了对应的转换代码，仅供参考：
+此外，针对 [MOTS](https://motchallenge.net/data/MOTS/) 数据集格式，X-AnyLabeling 支持通过 CLI 导出。请提供包含 XLABEL JSON 文件的目录、输出目录以及 `classes.txt` 文件：
 
 ```bash
-python3 tools/label_converter.py --task mots --mode custom_to_gt --src_path /path/to/your/custom_gt.txt
+xanylabeling convert --task xlabel2mots --labels /path/to/xlabel/labels --output /path/to/output --classes classes.txt
 ```
 
 > [!NOTE]
-> 请执行此脚本之前, 你需要先正确安装对应的 `pycocotools` 库。
+> 执行该命令前，需要安装 `pycocotools`。
 
 ### 4.7 PPOCR标签
 
-当前 X-AnyLabeling 最新版本（v2.4.0+）支持一键导入/导出以下两种 PPOCR 任务的标签：
+X-AnyLabeling 支持一键导入/导出以下两种 PPOCR 任务的标签：
 
 - 文本检测与识别：定位出输入图像中的文字区域，并识别出图像中的具体文字内容。
-- 关键信息提取：用于从图像中提取所需要的关键信息，包含语义实体识别和关系抽取两个字任务。
+- 关键信息提取：从图像中提取所需信息，包括语义实体识别和关系抽取两个子任务。
 
 **导入任务**：
 
@@ -619,7 +688,7 @@ python3 tools/label_converter.py --task mots --mode custom_to_gt --src_path /pat
 
 ### 4.8 ODVG标签
 
-当前 X-AnyLabeling 最新版本支持一键导入/导出 Grounding 任务相关的标签文件。
+X-AnyLabeling 支持一键导入/导出 Grounding 任务相关的标签文件。
 
 在导入/导出 ODVG 标注文件之前，需要准备好一份标签配置文件，具体可参考 [classes.txt](../../assets/classes.txt)，其中每一行代表一个类别，编号从上至下依次递增。
 
@@ -627,7 +696,7 @@ python3 tools/label_converter.py --task mots --mode custom_to_gt --src_path /pat
 
 1. 点击上方菜单栏的 `上传` 按钮。
 2. 选择对应的任务。
-3. 选择标签文件所在目录，点击确定即可.
+3. 选择标签文件所在目录，点击确定。
 
 **导出任务**：
 
@@ -640,15 +709,15 @@ python3 tools/label_converter.py --task mots --mode custom_to_gt --src_path /pat
 
 ### 4.9 VLM-R1-OVD标签
 
-当前 X-AnyLabeling 最新版本支持一键导入/导出 VLM-R1-OVD 标签文件。
+X-AnyLabeling 支持一键导入/导出 VLM-R1-OVD 标签文件。
 
 **导入任务**：
 
 1. 点击上方菜单栏的 `上传` 按钮。
 2. 选择对应的任务。
-3. 选择标签文件所在目录，点击确定即可.
+3. 选择标签文件所在目录，点击确定。
 
-**导出任务**:
+**导出任务**：
 
 1. 点击上方菜单栏的 `导出` 按钮。
 2. 选择对应的任务。
@@ -660,7 +729,7 @@ python3 tools/label_converter.py --task mots --mode custom_to_gt --src_path /pat
 
 ### 4.10 MMGD标签
 
-当前 X-AnyLabeling v3.1.2+ 版本支持一键导入基于 [MM-Grounding-DINO](https://github.com/open-mmlab/mmdetection/blob/main/configs/mm_grounding_dino/README.md) 预测所获取的标签文件。
+X-AnyLabeling 支持一键导入基于 [MM-Grounding-DINO](https://github.com/open-mmlab/mmdetection/blob/main/configs/mm_grounding_dino/README.md) 预测所获取的标签文件。
 
 **导入流程**：
 
@@ -671,7 +740,7 @@ python3 tools/label_converter.py --task mots --mode custom_to_gt --src_path /pat
 
 其中，[classes.txt](../../assets/classes.txt) 文件用于后续标签序号到类别名称的映射，每一行代表一个类别，编号从上至下从 0 开始依次递增。
 
-### 5. 工具栏
+## 5. 工具栏
 
 ### 5.1 数据统计
 
@@ -715,6 +784,10 @@ python3 tools/label_converter.py --task mots --mode custom_to_gt --src_path /pat
 
 ### 5.3 标签管理器
 
+<p align="center">
+  <img src="../../assets/resources/label_manager.png" alt="用于重命名、删除、隐藏和调整标签颜色的标签管理器">
+</p>
+
 当前，`X-AnyLabeling` 提供对标签对象的全局管理功能。用户可以通过以下操作进行管理：
 
 - **删除标签**：移除不需要的标签。
@@ -733,18 +806,17 @@ python3 tools/label_converter.py --task mots --mode custom_to_gt --src_path /pat
 
 此外，当需要快速选择画布上的所有标注对象时，请按照以下步骤操作：
 
-1. **切换编辑模式**
-  在左侧工具栏中点击选择相应图标（或按快捷键 `Ctrl+E`）进入编辑模式
-2. **激活标签列表**
-  在右侧对象标签栏中，使用鼠标左键单击任意一个目标标签
-3. **执行全选操作**
-  保持按住 `Shift` 键的同时：
-  - 先按 `Home` 键选中当前标签以上的所有对象
-  - 再按 `End` 键选中当前标签以下的所有对象
+1. 在左侧工具栏中选择编辑模式，或按 `Ctrl+J` 切换。
+2. 在右侧对象列表中单击任意对象。
+3. 按住 `Shift`，依次按 `Home` 和 `End`，选中当前对象前后的所有对象。
 
 ### 5.4 对象类型转换器
 
-`X-AnyLabeling` 提供了统一的 **Shape Converter（对象转换器）**。  
+<p align="center">
+  <img src="../../assets/resources/shape_converter.png" alt="显示源对象类型、目标类型和批量转换进度的对象转换器">
+</p>
+
+X-AnyLabeling 提供统一的 **Shape Converter（对象转换器）**。
 可在界面上方菜单栏的 **工具（Tools）-> Shape Converter** 打开转换窗口，在窗口中选择源对象类型与目标对象类型后执行批量转换。
 
 当前支持的转换关系如下：
@@ -762,18 +834,23 @@ python3 tools/label_converter.py --task mots --mode custom_to_gt --src_path /pat
 - `polygon`/`rotation` 转 `rectangle` 时，使用轴对齐外接矩形（AABB）。
 - `circle` 转 `rectangle`/`rotation`/`quadrilateral` 时，会基于圆心与半径生成对应四点对象。
 
-注意：部分转换会丢失原始几何信息（如旋转角度、精确边界、曲线细节），属于**不可逆**操作，请在批量处理前先备份标注数据。
+> [!WARNING]
+> 部分转换会丢失旋转角度、精确边界或曲线细节，且无法逆向恢复。批量处理前请先备份标注数据。
 
 ### 5.5 数字快捷键管理器
 
-数字快捷键管理器是 X-AnyLabeling 提供的一项实用功能，它允许用户为数字键（0-9）配置快速绘制对象的功能，大幅提高标注效率。通过预先设置数字键对应的绘制模式和标签名称，用户可以在标注过程中一键快速创建所需的标注对象。
+<p align="center">
+  <img src="../../assets/resources/digit_shortcut_manager.png" alt="用于给数字键分配绘制模式和默认标签的数字快捷键管理器">
+</p>
 
-在主界面上方菜单栏选择**工具**，然后点击**数字快捷键管理器**选项，或者直接使用快捷键 **Alt+D** 即可打开配置界面。
+数字快捷键管理器用于为数字键（0–9）配置绘制模式和默认标签。
 
-在数字快捷键管理器对话框中，用户可以看到一个包含所有数字键（0-9）的表格，每行包含以下信息：
+选择**工具 > 数字快捷键管理器**，或按 `Alt+D` 打开配置界面。
+
+表格中每行包含以下信息：
 
 - **数字**：表示键盘上的数字键（0-9）
-- **绘制模式**：从下拉菜单中选择绘制对象的类型，包括矩形框、长方体，多边形、旋转框、四边形、圆形、线段、点、折线或空选项
+- **绘制模式**：从下拉菜单中选择矩形框、长方体、多边形、旋转框、四边形、圆形、线段、点、折线或空选项
 - **标签**：为该对象指定默认标签名称（必填）
 
 **配置快捷键**：选择数字对应的绘制模式，输入该对象的默认标签名称（启用绘制模式后必须填写），然后点击**确定**保存设置。
@@ -782,7 +859,7 @@ python3 tools/label_converter.py --task mots --mode custom_to_gt --src_path /pat
 
 **使用快捷键**：在标注界面中，直接按下已配置的数字键（0-9），系统会自动切换到对应的绘制模式，并预设标签名称。绘制完成后，标注将自动使用预设的标签名称。
 
-**离线配置**：除了通过GUI界面配置外，用户还可以直接在用户目录下的 `.xanylabelingrc` 配置文件中进行离线配置。配置格式如下：
+**离线配置**：除图形界面外，也可以在用户目录下的 `.xanylabelingrc` 中配置：
 
 ```yaml
 digit_shortcuts:
@@ -792,9 +869,7 @@ digit_shortcuts:
   # 更多配置...
 ```
 
-通过GUI界面配置的数字快捷键设置会自动同步保存到当前用户目录下的 `.xanylabelingrc` 配置文件中，下次启动软件时会自动加载。同样，如果直接修改配置文件，软件重启后也会自动识别并应用这些更改。
-
-通过合理配置数字快捷键，您可以显著提高标注效率，减少重复操作，特别适合需要频繁切换不同标注类型的场景。
+通过图形界面配置的数字快捷键会自动保存到 `.xanylabelingrc`，并在下次启动时加载。手动修改配置文件后，需要重启应用才能生效。
 
 ### 5.6 群组编号管理器
 
@@ -805,6 +880,10 @@ digit_shortcuts:
 
 ### 5.7 对象管理器
 
+<p align="center">
+  <img src="../../assets/resources/shape_manager.png" alt="用于在指定帧范围内批量处理标注和选定对象的对象管理器">
+</p>
+
 对象管理器用于视频帧序列的批量标注处理，通过 **工具 -> 对象管理器** 或快捷键 **Alt+S** 打开。
 
 对话框提供四种操作模式（单选）：
@@ -814,9 +893,9 @@ digit_shortcuts:
 - **移除选定对象**：从帧范围内查找并移除与当前选中对象。若某帧仅包含匹配对象则删除整个标注文件，否则仅移除匹配部分。使用前需在画布上至少选中一个对象作为匹配模板。
 - **添加选定对象**：将当前选中的对象批量复制到指定帧。系统会自动检测边界并跳过超出图像范围的对象，同时避免重复添加已存在的相同对象。若目标帧无标注文件会自动创建，完成后自动勾选对应帧。
 
-使用时需设置起止帧编号：From 默认为当前帧，To 默认为空需手动填写。帧编号对应文件列表序号（从1开始）。点击 Go 后会弹出二次确认，通过后开始执行。移除和添加操作支持进度显示和中途取消。
+使用时需要设置起止帧编号：`From` 默认为当前帧，`To` 需要手动填写。帧编号对应从 1 开始的文件列表序号。点击 `Go` 并确认后开始执行；移除和添加操作支持显示进度及中途取消。
 
-> ![NOTE]
+> [!WARNING]
 > 注意删除标注操作不可恢复，删除图像可从备份目录手动恢复。
 
 ## 6. 帮助及语言
@@ -826,6 +905,10 @@ digit_shortcuts:
 在界面上方菜单栏中，用户可点击 **帮助** -> **关于** 选项，查看当前版本的详细信息，包括版本号和运行环境等。
 
 ### 6.2 设置软件语言
+
+<p align="center">
+  <img src="../../assets/resources/supported_languages.png" alt="X-AnyLabeling 的中文、英文、日文和韩文界面">
+</p>
 
 在界面上方菜单栏中，用户可点击 **语言** 下拉框，选择所需语言进行设置。目前支持 **中文**、**英文**、**日文** 和 **韩文** 四种语言。切换语言后，软件将自动重启，请确保在切换前保存好当前数据，以防数据丢失。
 
@@ -837,6 +920,10 @@ digit_shortcuts:
 - **Windows**: `C:\Users\<用户名>\.xanylabelingrc`
 
 现在大多数常用选项都可以直接在 `Settings`（`Ctrl+0`）中修改，而配置文件仍适用于手动编辑和高级自定义。若手动修改配置文件，建议关闭 X-AnyLabeling 后编辑，并在修改后重新启动软件使其生效。
+
+<p align="center">
+  <img src="../../assets/resources/settings_overview.png" alt="快捷键、常规选项、对象外观和画布行为的设置页面">
+</p>
 
 ### 7.1 快捷键设置
 
@@ -856,6 +943,10 @@ digit_shortcuts:
 | r                     | 创建矩形框                           |
 | Ctrl + r              | 创建长方体                    |
 | t                     | 创建四边形                           |
+| Shift + p             | 创建点                             |
+| Shift + l             | 创建线段                            |
+| Shift + s             | 创建折线                            |
+| Shift + c             | 创建圆形                            |
 | i                     | 运行模型                            |
 | q                     | `SAM 模式` 的正样本点                  |
 | e                     | `SAM 模式` 的负样本点                  |
@@ -875,17 +966,19 @@ digit_shortcuts:
 | Ctrl + 1              | 打开聊天机器人对话窗口                     |
 | Ctrl + 2              | 打开视觉问答窗口                        |
 | Ctrl + 3              | 打开图像分类器窗口                       |
+| Ctrl + 4              | 打开 PaddleOCR 窗口                    |
+| Ctrl + 5              | 打开视频分类器窗口                       |
 | Ctrl + q              | 退出当前应用程序                        |
 | Ctrl + i              | 打开图像文件                          |
 | Ctrl + o              | 打开视频文件                          |
 | Ctrl + u              | 从目录加载所有图像                       |
 | Ctrl + e              | 编辑标签                            |
-| Ctrl + j              | 编辑多边形                           |
+| Ctrl + j              | 切换绘制模式与编辑模式                    |
 | Ctrl + c              | 复制选定的对象                         |
 | Ctrl + v              | 粘贴选定的对象                         |
-| Ctrl + d              | 复制多边形                           |
+| Ctrl + d              | 快速复制选定对象                        |
 | Ctrl + g              | 显示当前任务的标注统计                     |
-| Ctrl + h              | 显示当前图片的所有对象                     |
+| Ctrl + h              | 显示或隐藏当前图片的所有对象                  |
 | Ctrl + p              | 切换保留上一个模式                       |
 | Ctrl + y              | 切换自动使用上一个标签                     |
 | Ctrl + Shift + g      | 切换自动使用上一个群组编号                   |
@@ -895,6 +988,7 @@ digit_shortcuts:
 | Ctrl + m              | 显示/隐藏掩码                         |
 | Ctrl + l              | 显示/隐藏标签                         |
 | Ctrl + t              | 显示/隐藏文本                         |
+| Ctrl + Shift + t      | 显示/隐藏图片标签面板                    |
 | Ctrl + k              | 显示/隐藏连接线                        |
 | Ctrl + Shift + l      | 显示/隐藏属性                         |
 | Ctrl + Shift + s      | 更改输出目录                          |
@@ -906,33 +1000,18 @@ digit_shortcuts:
 | Ctrl + Shift + m      | 合并选定的对象                         |
 | Ctrl + Shift + n      | 遍历放大对象                          |
 | Ctrl + Shift + c      | 遍历选中对象                          |
-| Ctrl + z              | 撤销上一操作                          |
 | Delete                | 删除选中对象                          |
 | Esc                   | 取消选择的对象                         |
 | Backspace             | 删除选定的点                          |
 | ↑→↓←                  | 使用键盘箭头移动选定的对象                   |
-| zxcv                  | 使用键盘旋转选定的矩形框                    |
+| z/x/c/v               | 使用键盘旋转选定的旋转框                    |
 | F9                    | 显示/隐藏导航器                        |
 | Ctrl + Alt + c        | 切换对比视图                          |
 
 
 ### 7.2 修改自定义标签颜色
 
-以下是修改自定义标签颜色的步骤：
-
-a. 打开用户目录下的配置文件 `.xanylabelingrc`，您可以使用文本编辑器或命令行工具进行编辑。
-
-b. 在配置文件中找到字段 `shape_color`，确保其值设置为 "manual"，这表示您将手动设置标签的颜色。
-
-c. 定位到 `label_colors` 字段，这是一个包含各个标签及其对应颜色的部分。
-
-d. 在 `label_colors` 中，找到您希望修改颜色的标签，例如 "person"、"car"、"bicycle" 等。
-
-e. 使用 RGB 值表示颜色，例如 `[255, 0, 0]` 表示红色，`[0, 255, 0]` 表示绿色，`[0, 0, 255]` 表示蓝色。
-
-f. 将您想要设置的颜色值替换到相应标签的值中，保存文件并关闭编辑器。
-
-具体示例如下：
+可以通过标签管理器或配置文件修改标签颜色。手动编辑 `.xanylabelingrc` 时，将 `shape_color` 设为 `manual`，并在 `label_colors` 中以 RGB 值配置每个标签：
 
 ```YAML
 ...
@@ -947,9 +1026,7 @@ label_colors:
 ...
 ```
 
-完成上述步骤后，您已成功修改了自定义标签的颜色。下次在标注过程中使用这些标签时，它们将显示您所设置的颜色。
-
-> 当前 X-AnyLabeling v2.4.0+ 版本支持在 GUI 界面直接设置 `label_colors`。您可以点击菜单栏的 `工具` -> `标签管理` 进行设置，此更改仅对当前窗口生效。
+也可以在**工具 > 标签管理器**中设置颜色；该方式的更改仅对当前窗口生效。
 
 ### 7.3 加载预定义标签
 
@@ -982,14 +1059,12 @@ cat
 
 然后通过菜单栏的 `Upload` → `Upload Label Classes File` 上传该文件。
 
-🔔 **小贴士：**
-
-- 配置文件方式设置的标签会永久保存，重启软件后依然有效，适合长期使用固定标签集的场景
-- 界面上传方式的标签仅在当前使用期间有效，重启后需要重新上传，适合需要经常切换不同标签集的场景
+> [!TIP]
+> 配置文件中的标签会持久保存；通过界面上传的标签仅在当前会话中有效，重启后需要重新上传。
 
 ### 7.4 自动切换编辑模式
 
-在 X-AnyLabeling v2.4.0 及以上版本，新增**自动切换至编辑模式**功能，用户可通过 `Settings > General > Behavior > Auto Switch To Edit Mode` 调整，也可通过配置文件中的 `auto_switch_to_edit_mode` 字段进行设置：
+用户可通过 `Settings > General > Behavior > Auto Switch To Edit Mode` 调整**自动切换至编辑模式**功能，也可通过配置文件中的 `auto_switch_to_edit_mode` 字段进行设置：
 
 
 | 选项    | 功能                        |
@@ -1000,7 +1075,7 @@ cat
 
 ### 7.5 悬浮自动高亮模式
 
-在 X-AnyLabeling v2.4.0 及以上版本，新增**悬浮自动高亮模式**功能，用户可通过 `Settings > General > Behavior > Auto Highlight Shape` 调整，也可通过配置文件中的 `auto_highlight_shape` 字段进行设置：
+用户可通过 `Settings > General > Behavior > Auto Highlight Shape` 调整**悬浮自动高亮模式**功能，也可通过配置文件中的 `auto_highlight_shape` 字段进行设置：
 
 
 | 选项    | 功能                           |
@@ -1009,13 +1084,12 @@ cat
 | false | 鼠标悬浮在对象上方时需用户手动点击对应对象显示高亮。   |
 
 
-注：在`多标签分类任务`的标定中，当用户手动上传属性文件时，`auto_highlight_shape`字段会被设置为`false`，以避免因误触而导致的属性窗口状态栏的切换，从而提升用户体验。
+> [!NOTE]
+> 在多标签分类任务中手动上传属性文件后，`auto_highlight_shape` 会设为 `false`，避免鼠标悬浮导致属性面板意外切换。
 
 ### 7.6 对象属性自定义
 
-a. 也可先通过 `Settings > Shape` 调整常用外观选项；如需更细粒度控制，再打开用户目录下的配置文件 `.xanylabelingrc`，您可以使用文本编辑器或命令行工具进行编辑。
-
-b. 在配置文件中找到字段 `shape`，根据需求修改相应字段值，包括边框颜色、填充颜色、顶点填充颜色、选中状态下的边框颜色、选中状态下的填充颜色等。
+可先在 `Settings > Shape` 中调整常用外观选项。如需更细粒度的控制，可编辑 `.xanylabelingrc` 中的 `shape` 字段，例如边框、填充和顶点颜色：
 
 ```YAML
 ...
@@ -1037,17 +1111,15 @@ shape:
 
 X-AnyLabeling 支持从不同的模型中心下载预训练模型。用户可以通过设置环境变量、在 `Settings`（`Ctrl+0`）中修改 `General > Behavior > Model Hub`、修改配置文件 `.xanylabelingrc` 或根据软件语言来指定模型下载源。下载源的优先级顺序如下：
 
-1. **环境变量 (最高优先级)**: 设置环境变量 `XANYLABELING_MODEL_HUB`。
+1. **环境变量（最高优先级）**：设置环境变量 `XANYLABELING_MODEL_HUB`。
   - 例如，在 Linux/macOS 使用 `export XANYLABELING_MODEL_HUB=modelscope`。
   - 在 Windows 使用 `set XANYLABELING_MODEL_HUB=modelscope`。
   - 如果此环境变量设置为 `modelscope`，将强制使用 ModelScope，覆盖配置文件的设置。如果设置为其他值或为空，则会考虑配置文件。
-2. **配置文件 (中等优先级)**: 通过 `Settings`（`Ctrl+0`）修改 `General > Behavior > Model Hub`，或打开用户目录下的配置文件 `.xanylabelingrc`。
+2. **配置文件（中等优先级）**：通过 `Settings`（`Ctrl+0`）修改 `General > Behavior > Model Hub`，或打开用户目录下的配置文件 `.xanylabelingrc`。
   - 找到 `model_hub` 字段。
   - 可选值为 `github` (默认) 或 `modelscope`。
   - 如果环境变量 `XANYLABELING_MODEL_HUB` 未设置或为空，则此配置生效。设置为 `model_hub: modelscope` 将优先从 ModelScope 下载模型。
-3. **语言设置 (最低优先级)**:
-  - 如果环境变量和配置文件中的 `model_hub` 都没有明确设置为 `modelscope`（即它们未设置、为空或为 `github`），则软件语言设置为中文 (`language: zh_CN`) 时，会默认尝试从 ModelScope 下载模型。
-  - 在其他情况下（例如，语言为英文、日文或韩文，且没有其他设置指定 `modelscope`），将使用默认的 GitHub URL。
+3. **语言设置（最低优先级）**：仅当环境变量未设置，且配置文件中的 `model_hub` 为空或不存在时，中文界面（`language: zh_CN`）才会默认使用 ModelScope；其他语言使用配置中的原始下载 URL。
 
 ### 7.8 主题设置
 
@@ -1068,6 +1140,18 @@ X-AnyLabeling 支持三种主题模式，可在菜单栏一级 **Theme** 菜单�
 ```yaml
 theme: auto  # 可选: auto, light, dark
 ```
+
+### 7.9 字体设置
+
+在 `Settings > General > Application Font` 中，可从下拉列表选择应用字体。列表会通过 Qt 自动扫描当前系统可用的字体，支持 Windows、macOS 和 Linux。选择字体并点击 **Save** 后会立即全局生效，无需重启；选择 **System Default（系统默认）** 可恢复操作系统默认字体及字号。
+
+字体设置会保存到用户配置文件的 `font_family` 字段，也可手动修改：
+
+```yaml
+font_family: null  # null 表示使用系统默认字体，也可填写字体名称，如 "Sarasa UI SC"
+```
+
+手动填写的字体名称必须已安装在当前系统中；若字体不可用，Qt 将自动回退到系统默认字体。
 
 ## 8. 任务
 
@@ -1104,12 +1188,12 @@ theme: auto  # 可选: auto, light, dark
 ### 8.8 光学字符识别
 
 - 文本检测与识别：[链接](../../examples/optical_character_recognition/text_recognition/README.md)
-- 关键信息提取：[链接](../../examples/optical_character_recognition/kie/README.md)
+- 关键信息提取：[链接](../../examples/optical_character_recognition/key_information_extraction/README.md)
 
 ### 8.9 交互式视频目标分割
 
-- SAM2-Video: [链接](../../examples/interactive_video_object_segmentation/sam2/README.md)
-- SAM3-Video: [链接](../../examples/interactive_video_object_segmentation/sam3/README.md)
+- SAM 2 Video：[链接](../../examples/interactive_video_object_segmentation/sam2/README.md)
+- SAM 3 Video：[链接](../../examples/interactive_video_object_segmentation/sam3/README.md)
 
 ### 8.10 抠图
 
@@ -1127,9 +1211,9 @@ theme: auto  # 可选: auto, light, dark
 
 ### 8.13 视觉定位
 
-- YOLOE: [链接](../../examples/grounding/yoloe/README.md)
-- SAM 3: [链接](../../examples/grounding/sam3/README.md)
-- LocateAnything: [链接](../../examples/grounding/locateanything/README.md)
+- YOLOE：[链接](../../examples/grounding/yoloe/README.md)
+- SAM 3：[链接](../../examples/grounding/sam3/README.md)
+- LocateAnything：[链接](../../examples/grounding/locateanything/README.md)
 
 ## 9. 模型
 
@@ -1138,9 +1222,9 @@ theme: auto  # 可选: auto, light, dark
 ## 10. 高级功能
 
 - 远程推理服务指南：[链接](https://github.com/CVHub520/X-AnyLabeling-Server)
-- 聊天机器人：[链接](../zh_cn/chatbot.md)
-- 视觉问答: [链接](../zh_cn/vqa.md)
-- 图像分类器：[链接](../zh_cn/image_classifier.md)
-- 视频分类器：[链接](../zh_cn/video_classifier.md)
+- 聊天机器人：[链接](./chatbot.md)
+- 视觉问答：[链接](./vqa.md)
+- 图像分类器：[链接](./image_classifier.md)
+- 视频分类器：[链接](./video_classifier.md)
 - Ultralytics 训练平台：[链接](../../examples/training/ultralytics/README.md)
-- 文档解析与智能文字识别：[链接](../zh_cn/paddle_ocr.md)
+- 文档解析与智能文字识别：[链接](./paddle_ocr.md)

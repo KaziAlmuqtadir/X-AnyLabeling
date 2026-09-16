@@ -8,12 +8,12 @@ X-AnyLabeling 提供了多种安装方法，您可以通过 `pip` 直接安装�
 > **高级功能说明**：以下高级功能仅适用于 Git 克隆方式，如需使用，请先参考对应的文档进行配置。
 >
 > 0. **远程推理服务指南**：基于 X-AnyLabeling-Server 的远程推理服务 - [安装指南](https://github.com/CVHub520/X-AnyLabeling-Server)
-> 1. **视频目标追踪**：基于 Segment-Anything 的视频目标追踪 - [安装指南](../../examples/interactive_video_object_segmentation/)
+> 1. **视频目标追踪**：基于 Segment Anything 的视频目标追踪（[SAM 2](../../examples/interactive_video_object_segmentation/sam2/README.md) | [SAM 3](../../examples/interactive_video_object_segmentation/sam3/README.md)）
 > 2. **目标候选框生成**：基于 UPN 的目标候选框生成 - [安装指南](../../examples/detection/hbb/README.md)
 > 3. **交互式检测分割**：基于视觉和文本提示的交互式目标检测和分割 - [安装指南](../../examples/detection/hbb/README.md)
-> 4. **智能检测分割**：基于视觉和文本提示及免提示的目标检测和分割 - [安装指南](../../examples/grounding/)
+> 4. **智能检测分割**：基于视觉提示、文本提示或免提示模式的目标检测与分割（[YOLOE](../../examples/grounding/yoloe/README.md) | [SAM 3](../../examples/grounding/sam3/README.md) | [LocateAnything](../../examples/grounding/locateanything/README.md)）
 > 5. **一键训练平台**：基于 Ultralytics 框架的一键训练平台 - [安装指南](../../examples/training/ultralytics/README.md)
-> 6. **全模态视觉推理**: 基于 Rex-Omni 的目标检测、关键点检测（人/手/动物）、OCR、Pointing、视觉提示定位 - [安装指南](../../examples/vision_language/rexomni/README.md)
+> 6. **全模态视觉推理**：基于 Rex-Omni 的目标检测、关键点检测（人、手、动物）、OCR、指向理解和视觉提示定位（[安装指南](../../examples/vision_language/rexomni/README.md)）
 
 ### 1.1 前置条件
 
@@ -40,6 +40,10 @@ conda activate x-anylabeling-cu11
 # CUDA 12.x 环境 [Windows/Linux]
 conda create --name x-anylabeling-cu12 python=3.12 -y
 conda activate x-anylabeling-cu12
+
+# CUDA 13.x 环境 [Windows/Linux]
+conda create --name x-anylabeling-cu13 python=3.12 -y
+conda activate x-anylabeling-cu13
 ```
 
 #### 1.1.2 Venv
@@ -61,6 +65,11 @@ source venv-cu12/bin/activate  # Linux
 python3.12 -m venv venv-cu11
 source venv-cu11/bin/activate  # Linux
 # venv-cu11\Scripts\activate    # Windows
+
+# CUDA 13.x [Windows/Linux]
+python3.12 -m venv venv-cu13
+source venv-cu13/bin/activate  # Linux
+# venv-cu13\Scripts\activate    # Windows
 ```
 
 #### 1.1.3 uv
@@ -92,25 +101,35 @@ source .venv-cu12/bin/activate     # Linux
 uv venv --python 3.12 .venv-cu11
 source .venv-cu11/bin/activate     # Linux
 # .venv-cu11\Scripts\activate      # Windows
+
+# CUDA 13.x 环境 [Windows/Linux]
+uv venv --python 3.12 .venv-cu13
+source .venv-cu13/bin/activate     # Linux
+# .venv-cu13\Scripts\activate      # Windows
 ```
 
 ### 1.2 安装
 
-#### 1.2.1 Pip 安装（Beta 预发布版本）
+![](../../assets/terminal_launch.gif)
 
-您可以通过以下命令轻松安装 X-AnyLabeling 的最新 Beta 预发布版本（推荐使用 `uv pip`）：
+#### 1.2.1 Pip 安装
+
+您可以通过以下命令安装 X-AnyLabeling 的最新稳定版本（推荐使用 `uv pip`）：
 
 ```bash
 pip install -U uv
 
 # CPU [Windows/Linux/macOS]
-uv pip install --pre "x-anylabeling-cvhub[cpu]"
+uv pip install "x-anylabeling-cvhub[cpu]"
 
 # CUDA 12.x 是 GPU 版本的默认选项 [Windows/Linux]
-uv pip install --pre "x-anylabeling-cvhub[gpu]"
+uv pip install "x-anylabeling-cvhub[gpu]"
 
 # CUDA 11.x [Windows/Linux]
-uv pip install --pre "x-anylabeling-cvhub[gpu-cu11]"
+uv pip install "x-anylabeling-cvhub[gpu-cu11]"
+
+# CUDA 13.x [Windows/Linux]
+uv pip install "x-anylabeling-cvhub[gpu-cu13]"
 ```
 
 #### 1.2.2 Git 克隆（推荐）
@@ -135,6 +154,9 @@ uv pip install -e ".[gpu]"
 
 # CUDA 11.x [Windows/Linux]
 uv pip install -e ".[gpu-cu11]"
+
+# CUDA 13.x [Windows/Linux]
+uv pip install -e ".[gpu-cu13]"
 ```
 
 如果您需要进行二次开发或打包编译，可同步安装 `dev` 依赖，例如：
@@ -180,7 +202,7 @@ xanylabeling
 | `--work-dir`               | 指定配置文件和数据文件的工作目录。默认为用户主目录。               |
 | `--qt-image-allocation-limit` | 以 MB 为单位覆盖 Qt 图像分配上限。Qt 默认值为 `256 MB`。设为 `0` 可完全禁用该限制。 |
 | `--nodata`                 | 防止在 JSON 文件中存储图像数据。                                |
-| `--autosave`               | 启用自动保存注释数据。                                          |
+| `--autosave`               | 启用自动保存标注数据。                                          |
 | `--nosortlabels`           | 禁用标签排序。                                                  |
 | `--flags`                  | 逗号分隔的标志列表或包含标志的文件路径。                          |
 | `--labelflags`             | 用于标签特定标志的 YAML 格式字符串或包含 JSON 格式字符串的文件。   |
@@ -190,7 +212,7 @@ xanylabeling
 | `--no-auto-update-check`   | 禁用启动时的自动更新检查。                                       |
 
 > [!NOTE]
-> 请参阅 X-AnyLabeling [pyproject.toml](../../pyproject.toml) 文件以获取依赖项列表。请注意，以上所有示例都安装了所有必需的依赖项。
+> 依赖项列表以 [pyproject.toml](../../pyproject.toml) 为准。上述命令会安装所选运行环境所需的依赖。
 
 此外，还支持多种标签格式之间的批量转换功能：
 
@@ -206,10 +228,14 @@ xanylabeling convert <task>  # 查看特定转换任务的详细帮助和使用�
 > - Ⅱ. [Get started with ONNX Runtime in Python](https://onnxruntime.ai/docs/get-started/with-python.html)
 > - Ⅲ. [ONNX Runtime Compatibility](https://onnxruntime.ai/docs/reference/compatibility.html)
 
+| CUDA 环境 | 依赖选项 | ONNX Runtime GPU | cuDNN |
+|-----------|----------|------------------|-------|
+| CUDA 11.x | `gpu-cu11` | `>= 1.15.0, < 1.19.0` | 8.x |
+| CUDA 12.x | `gpu` | `>= 1.18.1, < 1.27.0` | 9.x |
+| CUDA 13.x | `gpu-cu13` | `>= 1.27.0, < 1.28.0` | 9.x |
+
 > [!WARNING]
-> 对于 `CUDA 11.x` 环境，请务必确保版本满足以下要求：
-> - `onnx >= 1.15.0, < 1.16.1`
-> - `onnxruntime-gpu >= 1.15.0, < 1.19.0`
+> 在同一个环境中只能安装 `cpu`、`gpu-cu11`、`gpu` 或 `gpu-cu13` 其中一个依赖选项。CUDA 11.x 还要求 `onnx >= 1.15.0, < 1.16.1`。
 
 **可选步骤**：刷新翻译与资源文件
 
@@ -242,7 +268,7 @@ set PYTHONPATH=C:\path\to\X-AnyLabeling
 > [!NOTE]
 > **Fedora KDE 用户特别说明**：如果遇到鼠标移动缓慢或响应延迟的问题，可以尝试使用 `--qt-platform xcb` 参数来提升性能：
 > ```bash
-> xanylabeling--qt-platform xcb
+> xanylabeling --qt-platform xcb
 > ```
 
 #### 1.2.3 GUI 安装包
@@ -253,7 +279,7 @@ set PYTHONPATH=C:\path\to\X-AnyLabeling
 
 - **故障排除困难**：如果发生崩溃或错误，可能难以快速定位具体原因，从而增加了故障排除的难度。
 - **功能滞后**：GUI 版本在功能上可能落后于源代码版本，可能会导致功能缺失和兼容性问题。
-- **GPU 加速限制**：鉴于硬件和操作系统环境的多样性，当前的 GPU 推理加速服务需要用户根据需要从源代码编译。
+- **GPU 运行库要求**：请根据 CUDA 11、12 或 13 选择对应安装包，并安装匹配的 CUDA 和 cuDNN 运行库。无法加载所需 GPU 库时，应用会回退到 CPU。
 
 因此，建议根据具体需求和使用场景，在从源代码运行和使用 GUI 安装包之间做出选择，以优化使用体验。
 
@@ -269,17 +295,13 @@ set PYTHONPATH=C:\path\to\X-AnyLabeling
 <details>
 <summary>展开/收起</summary>
 
-为了方便用户在不同平台上运行 `X-AnyLabeling`，该工具提供了打包和编译的说明以及相关注意事项。在执行以下打包命令之前，请根据您的环境和要求修改 [app_info.py](../../anylabeling/app_info.py) 文件中的 `__preferred_device__` 参数，以选择适当的 GPU 或 CPU 版本进行构建。
+为了方便用户在不同平台上运行 `X-AnyLabeling`，该工具提供了打包和编译的说明以及相关注意事项。执行对应打包命令前，请先安装目标运行环境的依赖选项。
 
 ### 3.1 注意事项
 
-- **修改设备配置**：在编译之前，请确保 `anylabeling/app_info.py` 文件中的 `__preferred_device__` 参数已根据所需的 GPU/CPU 版本进行修改。
-
 - **验证 GPU 环境**：如果编译 GPU 版本，请先激活相应的 GPU 运行环境，并执行 `pip list | grep onnxruntime-gpu` 以确保其正确安装。
 
-- **Windows-GPU 编译**：手动修改 `packaging/pyinstaller/specs/x-anylabeling-win-gpu.spec` 文件中的 `datas` 列表参数，以将本地 `onnxruntime-gpu` 动态库的相关 `*.dll` 文件添加到列表中。
-
-- **Linux-GPU 编译**：手动修改 `packaging/pyinstaller/specs/x-anylabeling-linux-gpu.spec` 文件中的 `datas` 列表参数，以将本地 `onnxruntime-gpu` 动态库的相关 `*.so` 文件添加到列表中。此外，请确保根据您的 CUDA 版本下载匹配的 `onnxruntime-gpu` 包。有关详细的兼容性信息，请参阅[官方文档](https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html)。
+- **GPU 编译**：GPU 规格文件会自动收集 ONNX Runtime Provider 库。构建前安装 `gpu-cu11`、`gpu` 或 `gpu-cu13`，即可分别选择 CUDA 11、12 或 13。详细兼容性信息请参考[官方文档](https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html)。
 
 ### 3.2 编译命令
 

@@ -37,6 +37,7 @@ class SettingsController(QtCore.QObject):
         parent: QtCore.QObject | None = None,
         save_delay_ms: int = 300,
         defer_runtime_apply: bool = False,
+        preview_keys: set[str] | None = None,
     ):
         super().__init__(parent)
         self._config = config
@@ -46,6 +47,8 @@ class SettingsController(QtCore.QObject):
         )
         self._apply_callback = apply_callback
         self._save_callback = save_callback or save_config
+        self._preview_keys = set(preview_keys or ())
+        self._previewed_keys: set[str] = set()
         self._field_map = SETTING_FIELD_MAP
         self._defaults = defaults_map()
         self._dirty_keys: set[str] = set()
@@ -95,6 +98,20 @@ class SettingsController(QtCore.QObject):
                 self._dirty_keys.discard(key)
             else:
                 self._dirty_keys.add(key)
+            if key in self._preview_keys and self._apply_callback is not None:
+                try:
+                    self._apply_callback(key, copy.deepcopy(normalized))
+                except Exception:
+                    set_nested_value(self._working_config, key, old_value)
+                    if runtime_value == old_value:
+                        self._dirty_keys.discard(key)
+                    else:
+                        self._dirty_keys.add(key)
+                    raise
+                if runtime_value == normalized:
+                    self._previewed_keys.discard(key)
+                else:
+                    self._previewed_keys.add(key)
         else:
             try:
                 if self._apply_callback is not None:
@@ -164,8 +181,14 @@ class SettingsController(QtCore.QObject):
     def discard_changes(self) -> None:
         if not self._defer_runtime_apply:
             return
+        if self._apply_callback is not None:
+            for key in sorted(self._previewed_keys):
+                self._apply_callback(
+                    key, copy.deepcopy(get_nested_value(self._config, key))
+                )
         self._working_config = copy.deepcopy(self._config)
         self._dirty_keys.clear()
+        self._previewed_keys.clear()
         self._last_saved_keys = []
 
     def close_session(self) -> None:
@@ -202,6 +225,7 @@ class SettingsController(QtCore.QObject):
             return
         if self._defer_runtime_apply:
             self._dirty_keys.clear()
+            self._previewed_keys.clear()
             self._last_saved_keys = changed_keys
         else:
             self._last_saved_keys = []

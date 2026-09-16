@@ -59,6 +59,7 @@ class ElidedLabel(QtWidgets.QLabel):
             available_width,
         )
         super().setText(elided)
+        self.setToolTip(self._full_text if elided != self._full_text else "")
 
 
 class SettingsDialog(QtWidgets.QDialog):
@@ -72,6 +73,7 @@ class SettingsDialog(QtWidgets.QDialog):
         super().__init__(parent)
         self._controller = controller
         self._bindings: dict[str, EditorBinding] = {}
+        self._field_rows: dict[str, QtWidgets.QWidget] = {}
         self._nav_item_widgets: dict[
             str, tuple[QtWidgets.QLabel, QtWidgets.QLabel]
         ] = {}
@@ -492,6 +494,13 @@ class SettingsDialog(QtWidgets.QDialog):
             self.nav_list.setItemWidget(item, row_widget)
             self._nav_item_widgets[name] = (icon_label, text_label)
 
+        nav_height = sum(
+            self.nav_list.item(row).sizeHint().height()
+            + 2 * self.nav_list.spacing()
+            for row in range(self.nav_list.count())
+        )
+        self.nav_list.setFixedHeight(nav_height)
+
         left_layout.addWidget(brand_widget)
         left_layout.addWidget(self.nav_list)
         left_layout.addStretch(1)
@@ -796,6 +805,7 @@ class SettingsDialog(QtWidgets.QDialog):
     def _render_primary(self, primary: str) -> None:
         self._active_primary = primary
         self._bindings.clear()
+        self._field_rows.clear()
         self._shortcut_editor_roots = []
         self.header_title.setText(self._display_primary_text(primary))
         self._clear_layout(self.content_body_layout)
@@ -1165,7 +1175,11 @@ class SettingsDialog(QtWidgets.QDialog):
         )
         editor.setRange(minimum, maximum)
         editor.setDecimals(max(0, field.decimals))
-        editor.setSingleStep(10 ** (-max(0, field.decimals)))
+        editor.setSingleStep(
+            field.single_step
+            if field.single_step is not None
+            else 10 ** (-max(0, field.decimals))
+        )
         editor.setFixedHeight(self._editor_height)
         editor.setFixedWidth(self._single_editor_width)
         editor.setStyleSheet(get_double_spinbox_style())
@@ -1200,6 +1214,35 @@ class SettingsDialog(QtWidgets.QDialog):
     ) -> tuple[
         QtWidgets.QWidget, Callable[[Any], None], Callable[[bool], None]
     ]:
+        if field.key == "font_family":
+            editor = QtWidgets.QComboBox(self.content_body)
+            editor.setFixedWidth(244)
+            editor.setStyleSheet(self._combo_style())
+            self._register_wheel_block(editor)
+            editor.addItem(self.tr("System Default"), None)
+            for family in QtGui.QFontDatabase.families():
+                editor.addItem(family, family)
+                editor.setItemData(
+                    editor.count() - 1,
+                    QtGui.QFont(family),
+                    QtCore.Qt.ItemDataRole.FontRole,
+                )
+            self._prepare_combo_popup(editor)
+            editor.currentIndexChanged.connect(
+                lambda _index, f=field, w=editor: self._on_editor_value_changed(
+                    f,
+                    w.currentData(),
+                )
+            )
+            return (
+                editor,
+                lambda value, w=editor: self._set_combo_value(w, value),
+                lambda enabled, w=editor: self._set_error_style(
+                    w,
+                    enabled,
+                    self._combo_style(),
+                ),
+            )
         if field.key == "canvas.crosshair.color":
             editor = HexColorPickerEditor(parent=self.content_body)
             editor.setFixedWidth(self._single_editor_width)
@@ -1447,6 +1490,7 @@ class SettingsDialog(QtWidgets.QDialog):
                 | QtCore.Qt.AlignmentFlag.AlignVCenter,
             )
             self.content_body_layout.addWidget(row)
+            self._field_rows[field.key] = row
             self._bindings[field.key] = EditorBinding(
                 field, setter, error_setter
             )
@@ -1456,6 +1500,25 @@ class SettingsDialog(QtWidgets.QDialog):
                 self._add_row_separator()
 
         self.content_body_layout.addStretch(1)
+
+    def show_field(self, key: str) -> None:
+        field = next(
+            (field for field in self._controller.fields if field.key == key),
+            None,
+        )
+        if field is None:
+            raise KeyError(key)
+        row = self._nav_items.index(field.primary)
+        if self.nav_list.currentRow() == row:
+            self._render_primary(field.primary)
+        else:
+            self.nav_list.setCurrentRow(row)
+        QtCore.QTimer.singleShot(0, lambda: self._scroll_to_field(key))
+
+    def _scroll_to_field(self, key: str) -> None:
+        row = self._field_rows.get(key)
+        if row is not None:
+            self.content_scroll.ensureWidgetVisible(row)
 
     def _render_shortcut_fields(self, fields: list[SettingField]) -> None:
         self._shortcut_fields_by_group = {}

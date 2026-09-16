@@ -21,21 +21,17 @@ Please refer to [X-AnyLabeling-Server](https://github.com/CVHub520/X-AnyLabeling
 
 ### Usage
 
+<img src=".data/demo.png" width="100%" />
+
 Launch the X-AnyLabeling client, press `Ctrl+A` or click the `AI` button in the left menu bar to open the auto-labeling panel. In the model dropdown list, select `Remote-Server`, then choose `Segment Anything 3`.
 
 #### Text Prompting
-
-<video src="https://github.com/user-attachments/assets/d442d08b-fff7-4673-9a61-1b4ea6862f7d" width="100%" controls>
-</video>
 
 1. Enter object names in the text field (e.g., `person`, `car`, `bicycle`)
 2. Separate multiple classes with periods or commas: `person.car.bicycle` or `dog,cat,tree`
 3. Click **Send** to initiate detection
 
 #### Visual Prompting
-
-<video src="https://github.com/user-attachments/assets/5a953314-2611-42fc-81b7-90fbe3b018ee" width="100%" controls>
-</video>
 
 1. Click **+Rect** or **-Rect** to activate drawing mode
 2. Draw bounding boxes around target objects or regions of interest (use **+Rect** for positive prompts, **-Rect** for negative prompts)
@@ -100,7 +96,7 @@ Launch X-AnyLabeling, press `Ctrl+A` or click the `AI` button in the left menu b
 
 #### Batch Processing
 
-Press `Ctrl+M` to apply the current text prompt across all images in the folder.
+Press `Ctrl+B` to apply the current text prompt across all images in the folder.
 
 > [!TIP]
 > Toggle **Replace (On/Off)** to control whether results overwrite existing annotations or are appended alongside them.

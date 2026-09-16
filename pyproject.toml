@@ -16,25 +16,27 @@
 #   - CPU:       pip install -e ".[cpu,dev]"
 #   - CUDA 12.x: pip install -e ".[gpu,dev]"
 #   - CUDA 11.x: pip install -e ".[gpu-cu11,dev]"
+#   - CUDA 13.x: pip install -e ".[gpu-cu13,dev]"
 # Note: Ensure onnxruntime and onnxruntime-gpu are not installed simultaneously.
 # This approach allows for real-time code modifications without the need for re-installation.
 
-# Docs: https://github.com/CVHub520/X-AnyLabeling/tree/main/docs
+# Docs: https://xanylabeling.com/docs/x-anylabeling/get_started
 # Examples: https://github.com/CVHub520/X-AnyLabeling/tree/main/examples/
 # GitHub: https://github.com/CVHub520/X-AnyLabeling
 
 [build-system]
-requires = ["setuptools>=70.0.0", "wheel"]
+requires = ["setuptools>=77.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 # Project settings -----------------------------------------------------------------------------------------------------
 [project]
 name = "x-anylabeling-cvhub"
 dynamic = ["version"]
-description = "Advanced Auto Labeling Solution with Added Features"
+description = "A lightweight, unified, cross-platform desktop application for AI-assisted annotation of text, image, video, and multimodal data."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { "text" = "GPLv3" }
+license = "GPL-3.0-only"
+license-files = ["LICENSE"]
 keywords = ["machine-learning", "deep-learning", "computer-vision", "multi-modal", "auto-labeling", "image-annotation", "AI", "LLM", "VLM", "YOLO", "SAM", "CLIP", "Grounding-DINO", "X-AnyLabeling"]
 authors = [
     { name = "Wei Wang", email = "cv_hub@163.com" },
@@ -43,11 +45,10 @@ maintainers = [
     { name = "CVHub", email = "cvhub.cn@gmail.com" },
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Intended Audience :: Education",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -117,7 +118,7 @@ cpu = [
 gpu = [
     "numpy>=2.0.0",
     "onnx>=1.15.0",
-    "onnxruntime-gpu>=1.18.1; platform_system != 'Darwin'",
+    "onnxruntime-gpu>=1.18.1,<1.27.0; platform_system != 'Darwin'",
 ]
 # CUDA 11.x: ONNX < 1.16.1 + ONNXRuntime GPU < 1.19
 gpu-cu11 = [
@@ -125,11 +126,20 @@ gpu-cu11 = [
     "onnx>=1.15.0,<1.16.1",
     "onnxruntime-gpu>=1.15.0,<1.19.0; platform_system != 'Darwin'",
 ]
+# CUDA 13.x: ONNXRuntime GPU >= 1.27
+gpu-cu13 = [
+    "numpy>=2.0.0",
+    "onnx>=1.15.0",
+    "onnxruntime-gpu>=1.27.0,<1.28.0; platform_system != 'Darwin'",
+]
 
 [project.urls]
+"Homepage" = "https://xanylabeling.com"
+"Documentation" = "https://xanylabeling.com/docs/x-anylabeling/get_started"
+"Download" = "https://xanylabeling.com/download"
+"Funding" = "https://xanylabeling.com/sponsor"
 "Source" = "https://github.com/CVHub520/X-AnyLabeling"
-"Documentation" = "https://github.com/CVHub520/X-AnyLabeling/tree/main/docs"
-"Bug Reports" = "https://github.com/CVHub520/X-AnyLabeling/issues"
+"Issues" = "https://github.com/CVHub520/X-AnyLabeling/issues"
 "Changelog" = "https://github.com/CVHub520/X-AnyLabeling/releases"
 
 [project.scripts]
@@ -149,6 +159,18 @@ conflicts = [
         { extra = "gpu" },
         { extra = "gpu-cu11" },
     ],
+    [
+        { extra = "cpu" },
+        { extra = "gpu-cu13" },
+    ],
+    [
+        { extra = "gpu" },
+        { extra = "gpu-cu13" },
+    ],
+    [
+        { extra = "gpu-cu11" },
+        { extra = "gpu-cu13" },
+    ],
 ]
 
 # Tools settings -------------------------------------------------------------------------------------------------------
@@ -160,6 +182,7 @@ version = {attr = "anylabeling.app_info.__version__"}
 
 [tool.pytest.ini_options]
 addopts = "--doctest-modules --durations=30 --color=yes"
+testpaths = ["tests"]
 markers = [
     "slow: skip slow tests unless --slow is set",
 ]

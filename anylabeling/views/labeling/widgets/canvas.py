@@ -25,9 +25,12 @@ CURSOR_GRAB = QtCore.Qt.CursorShape.OpenHandCursor
 AUTO_DECODE_DELAY_MS = 100
 MAX_AUTO_DECODE_MARKS = 42
 AUTO_DECODE_MOVE_THRESHOLD = 5.0
-MOVE_SPEED = 5.0
+MOVE_SPEED = 1.0
 LARGE_ROTATION_INCREMENT = math.radians(1.0)
 SMALL_ROTATION_INCREMENT = math.radians(0.1)
+ROTATION_HANDLE_DISTANCE = 32.0
+ROTATION_HANDLE_HIT_RADIUS = 10.0
+ROTATION_HANDLE_SNAP_DEGREES = 15.0
 CUBOID_FRONT_EDGE_CENTER_INDICES = {
     Shape.CUBOID_FRONT_LEFT_EDGE_CENTER,
     Shape.CUBOID_FRONT_RIGHT_EDGE_CENTER,
@@ -84,6 +87,7 @@ class Canvas(
     _fill_drawing = False
 
     def __init__(self, *args, **kwargs):
+        self.label_font_size = kwargs.pop("label_font_size", 8)
         self.epsilon = kwargs.pop("epsilon", 10.0)
         self.double_click = kwargs.pop("double_click", "close")
         if self.double_click not in [None, "close"]:
@@ -111,6 +115,7 @@ class Canvas(
         self.rotation_config = kwargs.pop("rotation", {})
         self.mask_config = kwargs.pop("mask", {})
         self.brush_config = kwargs.pop("brush", {})
+        self.magic_wand_config = kwargs.pop("magic_wand", {})
         self.cuboid_config = kwargs.pop("cuboid", {})
         self.parent = kwargs.pop("parent")
         super().__init__(*args, **kwargs)
@@ -160,9 +165,13 @@ class Canvas(
         self.prev_h_edge = None
         self.h_cuboid_face = None
         self.prev_h_cuboid_face = None
+        self.h_rotation_shape = None
+        self.prev_h_rotation_shape = None
         self.moving_shape = False
         self._pending_edge_point = None
         self.rotating_shape = False
+        self._rotation_drag_shape = None
+        self._rotation_drag_prev_angle = None
         self.snapping = True
         self.h_shape_is_selected = False
         self.h_shape_is_hovered = None
@@ -278,6 +287,42 @@ class Canvas(
             * 1024
         )
 
+        self.is_magic_wand_mode = False
+        self.magic_wand_default_threshold = max(
+            0,
+            min(
+                255,
+                int(self.magic_wand_config.get("default_threshold", 15)),
+            ),
+        )
+        self.magic_wand_drag_sensitivity = max(
+            0.1,
+            float(self.magic_wand_config.get("drag_sensitivity", 3.0)),
+        )
+        self.magic_wand_luminance_weight = max(
+            0.0,
+            min(
+                1.0,
+                float(self.magic_wand_config.get("luminance_weight", 0.5)),
+            ),
+        )
+        self.magic_wand_simplify_epsilon_px = max(
+            0.0,
+            float(self.magic_wand_config.get("simplify_epsilon", 0.5)),
+        )
+        self.magic_wand_opacity = max(
+            0.0,
+            min(1.0, float(self.magic_wand_config.get("opacity", 0.6))),
+        )
+        self._magic_wand_active = False
+        self._magic_wand_source = None
+        self._magic_wand_distance = None
+        self._magic_wand_seed = None
+        self._magic_wand_anchor = None
+        self._magic_wand_threshold = self.magic_wand_default_threshold
+        self._magic_wand_mask = None
+        self._magic_wand_path = None
+
         # Compare view support
         self.compare_pixmap = None
         self.split_position = 0.5
@@ -367,6 +412,7 @@ class Canvas(
                         break
 
             self.moving_shape = False
+            self.update()
 
     def clip_rectangle_to_pixmap(self, shape):
         """Clip rectangle shape to pixmap boundaries"""
@@ -582,6 +628,183 @@ class Canvas(
         """Check if user is editing (mode==EDIT)"""
         return self.mode == self.EDIT
 
+    @staticmethod
+    def _compute_magic_wand_distance(
+        image: np.ndarray, seed: tuple, luminance_weight: float
+    ) -> np.ndarray:
+        """Return weighted perceptual color distances from a seed pixel."""
+        height, width = image.shape[:2]
+        x, y = seed
+        if not (0 <= x < width and 0 <= y < height):
+            return np.full((height, width), np.inf, dtype=np.float32)
+        lab = cv2.cvtColor(image, cv2.COLOR_RGB2LAB).astype(np.float32)
+        seed_color = lab[y, x].copy()
+        lab -= seed_color
+        weight = max(0.0, min(1.0, float(luminance_weight)))
+        lab[..., 0] *= (100.0 / 255.0) * weight
+        np.square(lab, out=lab)
+        return np.sqrt(np.sum(lab, axis=2, dtype=np.float32))
+
+    @staticmethod
+    def _connected_magic_wand_mask(
+        distance: np.ndarray, seed: tuple, threshold: int
+    ) -> np.ndarray:
+        """Return the seed-connected component within a color distance."""
+        height, width = distance.shape
+        x, y = seed
+        if not (0 <= x < width and 0 <= y < height):
+            return np.zeros((height, width), dtype=np.uint8)
+        tolerance = max(0, min(255, int(threshold)))
+        candidates = (distance <= tolerance).astype(np.uint8)
+        flood_mask = np.zeros((height + 2, width + 2), dtype=np.uint8)
+        flags = (
+            4
+            | cv2.FLOODFILL_FIXED_RANGE
+            | cv2.FLOODFILL_MASK_ONLY
+            | (255 << 8)
+        )
+        cv2.floodFill(
+            candidates,
+            flood_mask,
+            (x, y),
+            0,
+            0,
+            0,
+            flags,
+        )
+        return flood_mask[1:-1, 1:-1]
+
+    @classmethod
+    def _compute_magic_wand_mask(
+        cls,
+        image: np.ndarray,
+        seed: tuple,
+        threshold: int,
+        luminance_weight: float = 0.5,
+    ) -> np.ndarray:
+        """Return a perceptually similar connected region around a seed."""
+        distance = cls._compute_magic_wand_distance(
+            image, seed, luminance_weight
+        )
+        return cls._connected_magic_wand_mask(distance, seed, threshold)
+
+    @staticmethod
+    def _polylines_to_painter_path(polylines: list) -> QtGui.QPainterPath:
+        """Convert mask contour polylines to a closed painter path."""
+        path = QtGui.QPainterPath()
+        for poly in polylines:
+            if len(poly) < 3:
+                continue
+            path.moveTo(float(poly[0][0]), float(poly[0][1]))
+            for x, y in poly[1:]:
+                path.lineTo(float(x), float(y))
+            path.closeSubpath()
+        return path
+
+    def _magic_wand_image(self) -> np.ndarray:
+        """Return a cached contiguous RGB view of the current pixmap."""
+        if self._magic_wand_source is None:
+            image = self.pixmap.toImage().convertToFormat(
+                QtGui.QImage.Format.Format_RGB888
+            )
+            height, width = image.height(), image.width()
+            ptr = image.bits()
+            ptr.setsize(image.sizeInBytes())
+            rows = np.frombuffer(ptr, dtype=np.uint8).reshape(
+                height, image.bytesPerLine()
+            )
+            rgb = rows[:, : width * 3].reshape(height, width, 3)
+            self._magic_wand_source = np.array(
+                rgb, dtype=np.uint8, copy=True, order="C"
+            )
+        return self._magic_wand_source
+
+    def _update_magic_wand_preview(self, threshold: int) -> None:
+        """Recompute and display the selected region at a new threshold."""
+        if self._magic_wand_seed is None:
+            return
+        self._magic_wand_threshold = max(0, min(255, int(threshold)))
+        if self._magic_wand_distance is None:
+            self._magic_wand_distance = self._compute_magic_wand_distance(
+                self._magic_wand_image(),
+                self._magic_wand_seed,
+                self.magic_wand_luminance_weight,
+            )
+        self._magic_wand_mask = self._connected_magic_wand_mask(
+            self._magic_wand_distance,
+            self._magic_wand_seed,
+            self._magic_wand_threshold,
+        )
+        self._magic_wand_path = self._polylines_to_painter_path(
+            self._mask_to_polylines(self._magic_wand_mask)
+        )
+        self.update()
+
+    def _start_magic_wand(
+        self, pos: QtCore.QPointF, anchor: QtCore.QPointF
+    ) -> bool:
+        """Start a thresholded flood selection at an image position."""
+        if self.out_off_pixmap(pos):
+            return False
+        self._clear_magic_wand_preview()
+        self._magic_wand_active = True
+        self._magic_wand_seed = (
+            int(round(pos.x())),
+            int(round(pos.y())),
+        )
+        self._magic_wand_anchor = QtCore.QPointF(anchor)
+        self._update_magic_wand_preview(self.magic_wand_default_threshold)
+        return True
+
+    def _drag_magic_wand(self, anchor: QtCore.QPointF) -> None:
+        """Update tolerance from the distance to the press position."""
+        if not self._magic_wand_active or self._magic_wand_anchor is None:
+            return
+        delta = anchor - self._magic_wand_anchor
+        distance = math.hypot(delta.x(), delta.y())
+        threshold = self.magic_wand_default_threshold + int(
+            distance / self.magic_wand_drag_sensitivity
+        )
+        threshold = max(0, min(255, threshold))
+        if threshold != self._magic_wand_threshold:
+            self._update_magic_wand_preview(threshold)
+
+    def _clear_magic_wand_preview(self) -> None:
+        """Clear an in-progress magic wand selection."""
+        self._magic_wand_active = False
+        self._magic_wand_seed = None
+        self._magic_wand_anchor = None
+        self._magic_wand_distance = None
+        self._magic_wand_mask = None
+        self._magic_wand_path = None
+        self._magic_wand_threshold = self.magic_wand_default_threshold
+        self.update()
+
+    def _finish_magic_wand(self) -> bool:
+        """Convert the current magic wand mask to a polygon shape."""
+        mask = self._magic_wand_mask
+        self._clear_magic_wand_preview()
+        if mask is None:
+            return False
+        shape = Shape(shape_type="polygon")
+        shape.mask = mask
+        if not self._update_shape_points_from_mask(
+            shape, self.magic_wand_simplify_epsilon_px
+        ):
+            return False
+        shape.mask = None
+        shape._brush_using_mask = False
+        self.current = shape
+        self.finalise()
+        return True
+
+    def set_magic_wand_mode(self, enabled: bool) -> None:
+        """Enable or disable thresholded flood selection mode."""
+        self._clear_magic_wand_preview()
+        self.is_magic_wand_mode = bool(enabled)
+        if not enabled:
+            self._magic_wand_source = None
+
     # ------------------------------------------------------------------ #
     # Brush edit mode
     #
@@ -719,7 +942,9 @@ class Canvas(
             shape._brush_mask_version = 0
         shape._brush_using_mask = True
 
-    def _update_shape_points_from_mask(self, shape: Shape) -> bool:
+    def _update_shape_points_from_mask(
+        self, shape: Shape, simplify_epsilon_px: float | None = None
+    ) -> bool:
         """Rewrite ``shape.points`` from its mask's largest component.
 
         The largest external contour is simplified and stored as the new
@@ -728,6 +953,7 @@ class Canvas(
         Args:
             shape: The brush-edited shape whose mask is converted back
                 into polygon vertices.
+            simplify_epsilon_px: Optional contour simplification tolerance.
 
         Returns:
             ``True`` when a valid polygon was produced.
@@ -751,7 +977,12 @@ class Canvas(
             shape.points = []
             return False
         cnt = np.array(best, dtype=np.int32).reshape((-1, 1, 2))
-        outer = self._simplify_contour(cnt, self.brush_simplify_epsilon_px)
+        epsilon = (
+            self.brush_simplify_epsilon_px
+            if simplify_epsilon_px is None
+            else max(0.0, float(simplify_epsilon_px))
+        )
+        outer = self._simplify_contour(cnt, epsilon)
         if len(outer) < 3:
             outer = best
         shape.mask.fill(0)
@@ -812,14 +1043,9 @@ class Canvas(
         if mask.ndim != 2:
             mask = mask.squeeze()
 
-        outline_path = QtGui.QPainterPath()
-        for poly in self._mask_to_polylines(mask):
-            if len(poly) < 3:
-                continue
-            outline_path.moveTo(float(poly[0][0]), float(poly[0][1]))
-            for x, y in poly[1:]:
-                outline_path.lineTo(float(x), float(y))
-            outline_path.closeSubpath()
+        outline_path = self._polylines_to_painter_path(
+            self._mask_to_polylines(mask)
+        )
 
         self._brush_overlay_cache[shape] = (version, outline_path)
         return outline_path
@@ -1205,9 +1431,8 @@ class Canvas(
                     else shape.line_color
                 )
                 pen = QtGui.QPen(outline_color)
-                pen.setWidth(
-                    max(1, int(round(shape.line_width / Shape.scale)))
-                )
+                pen.setWidthF(float(shape.line_width))
+                pen.setCosmetic(True)
                 if getattr(shape, "difficult", False):
                     pen.setStyle(Qt.PenStyle.DashLine)
                 p.setPen(pen)
@@ -1239,6 +1464,43 @@ class Canvas(
         p.setBrush(fill_color)
         p.drawEllipse(QtCore.QPointF(self.prev_move_point), r, r)
 
+    def _paint_magic_wand_overlay(self, p: QtGui.QPainter) -> None:
+        """Draw the live magic wand selection above the image."""
+        if self._magic_wand_path is None or self._magic_wand_path.isEmpty():
+            return
+        p.save()
+        color = QtGui.QColor(
+            0, 180, 255, int(round(self.magic_wand_opacity * 255))
+        )
+        outline = QtGui.QColor(255, 255, 255, 230)
+        p.setPen(QtGui.QPen(outline, 2.0 / max(self.scale, 1e-6)))
+        p.setBrush(color)
+        p.drawPath(self._magic_wand_path)
+        p.restore()
+
+    def _paint_rotation_handles(self, p):
+        for shape in self._rotation_handle_shapes():
+            self._paint_rotation_handle(p, shape)
+
+    def _paint_rotation_handle(self, p, shape):
+        geometry = self._rotation_handle_geometry(shape)
+        if geometry is None:
+            return
+        _, handle, _ = geometry
+        scale = max(self.scale, 1e-6)
+        vertex_radius = Shape.point_size / (2.0 * scale)
+        vertex_pen_width = float(shape.line_width) / scale
+        radius = vertex_radius + vertex_pen_width / 2.0
+        hovered = shape in (self.h_rotation_shape, self._rotation_drag_shape)
+        ring_width = (vertex_pen_width / 2.0) * (2.2 if hovered else 1.0)
+        inner_radius = max(0.5 / scale, radius - ring_width)
+
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QtGui.QColor(0, 0, 0, 255))
+        p.drawEllipse(handle, radius, radius)
+        p.setBrush(QtGui.QColor(255, 255, 255, 255))
+        p.drawEllipse(handle, inner_radius, inner_radius)
+
     def set_auto_labeling(self, value=True):
         """Set auto labeling mode"""
         self.is_auto_labeling = value
@@ -1256,6 +1518,8 @@ class Canvas(
         ):
             return self.tr("Auto Labeling")
         if self.mode == self.CREATE:
+            if self.is_magic_wand_mode:
+                return self.tr("Magic Wand")
             return self.tr("Drawing")
         elif self.mode == self.EDIT:
             return self.tr("Editing")
@@ -1280,7 +1544,9 @@ class Canvas(
         self.prev_h_vertex = self.h_vertex
         self.prev_h_edge = self.h_edge
         self.prev_h_cuboid_face = self.h_cuboid_face
+        self.prev_h_rotation_shape = self.h_rotation_shape
         self.h_shape = self.h_vertex = self.h_edge = self.h_cuboid_face = None
+        self.h_rotation_shape = None
 
     def selected_vertex(self):
         """Check if selected a vertex"""
@@ -1426,6 +1692,7 @@ class Canvas(
                 self.h_vertex,
                 self.h_edge,
                 self.h_cuboid_face,
+                self.h_rotation_shape,
             )
         )
         self.un_highlight()
@@ -1433,6 +1700,175 @@ class Canvas(
         self.vertex_selected.emit(False)
         if had_hover:
             self.shape_hover_changed.emit()
+
+    @staticmethod
+    def _rotation_shape_center(shape):
+        return QtCore.QPointF(
+            (shape.points[0].x() + shape.points[2].x()) / 2.0,
+            (shape.points[0].y() + shape.points[2].y()) / 2.0,
+        )
+
+    def _rotation_handle_geometry(self, shape):
+        if (
+            shape is None
+            or shape.shape_type != "rotation"
+            or len(shape.points) != 4
+        ):
+            return None
+        p0, p1 = shape.points[0], shape.points[1]
+        dx = p1.x() - p0.x()
+        dy = p1.y() - p0.y()
+        edge_length = math.hypot(dx, dy)
+        if edge_length < 1e-6:
+            return None
+        edge_mid = QtCore.QPointF(
+            (p0.x() + p1.x()) / 2.0,
+            (p0.y() + p1.y()) / 2.0,
+        )
+        normal_x = dy / edge_length
+        normal_y = -dx / edge_length
+        distance = ROTATION_HANDLE_DISTANCE / max(self.scale, 1e-6)
+        handle = QtCore.QPointF(
+            edge_mid.x() + normal_x * distance,
+            edge_mid.y() + normal_y * distance,
+        )
+        return edge_mid, handle, self._rotation_shape_center(shape)
+
+    def _rotation_handle_shapes(self):
+        candidates = []
+        for shape in self.selected_shapes:
+            if shape not in candidates:
+                candidates.append(shape)
+        for shape in (self.h_shape, self.h_rotation_shape):
+            if shape is not None and shape not in candidates:
+                candidates.append(shape)
+        return sorted(
+            [
+                shape
+                for shape in candidates
+                if shape in self.shapes
+                and not shape.locked
+                and shape.visible
+                and self.is_visible(shape)
+                and shape.shape_type == "rotation"
+                and len(shape.points) == 4
+            ],
+            key=lambda shape: self.shapes.index(shape),
+            reverse=True,
+        )
+
+    def _rotation_handle_shape_at(self, pos):
+        hit_radius = ROTATION_HANDLE_HIT_RADIUS / max(self.scale, 1e-6)
+        for shape in self._rotation_handle_shapes():
+            geometry = self._rotation_handle_geometry(shape)
+            if geometry is None:
+                continue
+            edge_mid, handle, _ = geometry
+            if utils.distance(handle - pos) <= hit_radius:
+                return shape
+            if utils.distance_to_line(pos, [edge_mid, handle]) <= hit_radius:
+                return shape
+        return None
+
+    def _set_rotation_handle_hover(self, shape):
+        if self.h_shape is not None:
+            self.h_shape.highlight_clear()
+        self.prev_h_vertex = self.h_vertex
+        self.h_vertex = None
+        self.prev_h_shape = self.h_shape = shape
+        self.prev_h_edge = self.h_edge
+        self.h_edge = None
+        self.prev_h_cuboid_face = self.h_cuboid_face
+        self.h_cuboid_face = None
+        self.prev_h_rotation_shape = self.h_rotation_shape
+        self.h_rotation_shape = shape
+        self.override_cursor(CURSOR_POINT)
+        self.setToolTip(
+            self.tr("Click & drag to rotate shape '%s'") % shape.label
+        )
+        self.setStatusTip(self.toolTip())
+        self.update()
+
+    def _rotation_mouse_angle(self, shape, pos):
+        if shape is None or len(shape.points) != 4:
+            return None
+        center = self._rotation_shape_center(shape)
+        return math.atan2(pos.y() - center.y(), pos.x() - center.x())
+
+    @staticmethod
+    def _snap_rotation_angle(angle):
+        step = math.radians(ROTATION_HANDLE_SNAP_DEGREES)
+        return round(angle / step) * step
+
+    def _start_rotation_handle_drag(
+        self, shape, pos, multiple_selection_mode, modifiers
+    ):
+        self.set_hiding()
+        if shape not in self.selected_shapes:
+            if multiple_selection_mode:
+                self.selection_changed.emit(self.selected_shapes + [shape])
+            else:
+                self.selection_changed.emit([shape])
+            self.h_shape_is_selected = False
+        else:
+            self.h_shape_is_selected = True
+        self.h_shape = shape
+        self.h_rotation_shape = shape
+        self.h_vertex = None
+        self.h_edge = None
+        self.h_cuboid_face = None
+        angle = self._rotation_mouse_angle(shape, pos)
+        if angle is None:
+            return
+        if modifiers & QtCore.Qt.KeyboardModifier.ShiftModifier:
+            angle = self._snap_rotation_angle(angle)
+        self._rotation_drag_shape = shape
+        self._rotation_drag_prev_angle = angle
+        self.prev_point = pos
+        self.calculate_offsets(pos)
+        self.override_cursor(CURSOR_MOVE)
+
+    def _update_rotation_handle_drag(self, pos, modifiers):
+        shape = self._rotation_drag_shape
+        if shape is None or shape.locked:
+            return
+        angle = self._rotation_mouse_angle(shape, pos)
+        if angle is None or self._rotation_drag_prev_angle is None:
+            return
+        if modifiers & QtCore.Qt.KeyboardModifier.ShiftModifier:
+            angle = self._snap_rotation_angle(angle)
+        theta = self._rotation_drag_prev_angle - angle
+        if abs(theta) < 1e-9:
+            return
+        if self.bounded_rotate_shapes(0, shape, theta):
+            self._rotation_drag_prev_angle = angle
+            self.rotating_shape = True
+            self.h_shape = shape
+            self.h_rotation_shape = shape
+            self.repaint()
+
+    def _store_rotated_shape(self, shape):
+        if shape is None or shape not in self.shapes:
+            return
+        index = self.shapes.index(shape)
+        if (
+            self.shapes_backups
+            and index < len(self.shapes_backups[-1])
+            and self.shapes_backups[-1][index].points
+            != self.shapes[index].points
+        ):
+            self.store_shapes()
+            self.shape_rotated.emit()
+
+    def _finish_rotation_handle_drag(self):
+        shape = self._rotation_drag_shape
+        self._rotation_drag_shape = None
+        self._rotation_drag_prev_angle = None
+        if self.rotating_shape:
+            self._store_rotated_shape(shape)
+            self.rotating_shape = False
+        self.override_cursor(CURSOR_POINT)
+        self.update()
 
     def _sync_drawing_line(self, pos, modifiers):
         if not self.drawing() or not self.current:
@@ -1544,6 +1980,14 @@ class Canvas(
 
         if self.is_brush_mode and self.editing():
             self._brush_mouse_move(ev, pos)
+            return
+
+        if self.is_magic_wand_mode and self.drawing():
+            self.prev_move_point = pos
+            self.override_cursor(CURSOR_DRAW)
+            if self._magic_wand_active and self._left_button_pressed(ev):
+                self._drag_magic_wand(ev.position())
+            self.repaint()
             return
 
         if (
@@ -1680,6 +2124,14 @@ class Canvas(
                     s.copy() for s in self.selected_shapes
                 ]
                 self.repaint()
+            return
+
+        if self._rotation_drag_shape is not None:
+            if QtCore.Qt.MouseButton.LeftButton & ev.buttons():
+                self.is_move_editing = False
+                self._update_rotation_handle_drag(pos, ev.modifiers())
+            else:
+                self._finish_rotation_handle_drag()
             return
 
         # Polygon/Vertex moving.
@@ -1825,6 +2277,17 @@ class Canvas(
         self.show_shape.emit(-1, -1, pos)
 
         self._hovered_group_id = None
+
+        rotation_handle_shape = self._rotation_handle_shape_at(pos)
+        if rotation_handle_shape is not None:
+            self._set_rotation_handle_hover(rotation_handle_shape)
+            self.vertex_selected.emit(False)
+            if prev_hover_shape != self.h_shape:
+                self.shape_hover_changed.emit()
+            return
+        if self.h_rotation_shape is not None:
+            self.prev_h_rotation_shape = self.h_rotation_shape
+            self.h_rotation_shape = None
 
         # Just hovering over the canvas, 2 possibilities:
         # - Highlight shapes
@@ -2038,6 +2501,8 @@ class Canvas(
             self.override_cursor(CURSOR_DEFAULT)
             self.setToolTip("")
             self.setStatusTip("")
+            if self.h_shape_is_hovered and self.selected_shapes:
+                self.deselect_shape()
         self.vertex_selected.emit(self.h_vertex is not None)
 
         if prev_hover_shape != self.h_shape:
@@ -2131,6 +2596,10 @@ class Canvas(
                 self._space_pan_suppress_until_release = False
             if self._space_pressed and self._start_space_pan(ev.position()):
                 ev.accept()
+                return
+            if self.is_magic_wand_mode and self.drawing():
+                if self._start_magic_wand(pos, ev.position()):
+                    ev.accept()
                 return
             if self.drawing():
                 if self.current:
@@ -2253,10 +2722,10 @@ class Canvas(
                         self.set_hiding()
                         self.drawing_polygon.emit(True)
                         self.update()
-                elif (
-                    self.out_off_pixmap(pos)
-                    and self.create_mode == "linestrip"
-                ):
+                elif self.out_off_pixmap(pos) and self.create_mode in [
+                    "polygon",
+                    "linestrip",
+                ]:
                     w = self.pixmap.width()
                     h = self.pixmap.height()
                     if w > 0 and h > 0:
@@ -2292,6 +2761,23 @@ class Canvas(
                     self.override_cursor(self._vertex_eraser_cursor())
                     self._set_vertex_eraser_tooltip()
                     self.erase_selected_vertex_at(pos)
+                    self.prev_point = pos
+                    self.prev_pan_point = ev.position()
+                    self.repaint()
+                    ev.accept()
+                    return
+                rotation_handle_shape = self._rotation_handle_shape_at(pos)
+                if rotation_handle_shape is not None:
+                    group_mode = (
+                        ev.modifiers()
+                        == QtCore.Qt.KeyboardModifier.ControlModifier
+                    )
+                    self._start_rotation_handle_drag(
+                        rotation_handle_shape,
+                        pos,
+                        group_mode,
+                        ev.modifiers(),
+                    )
                     self.prev_point = pos
                     self.prev_pan_point = ev.position()
                     self.repaint()
@@ -2372,6 +2858,17 @@ class Canvas(
         if self.is_brush_mode and self._brush_mouse_release(ev):
             return
 
+        if self._magic_wand_active:
+            if ev.button() == QtCore.Qt.MouseButton.LeftButton:
+                ev.accept()
+                return
+            if ev.button() == QtCore.Qt.MouseButton.RightButton:
+                if self._finish_magic_wand() and not self.is_auto_labeling:
+                    self.prev_pan_point = ev.position()
+                    self.mode_changed.emit()
+                ev.accept()
+                return
+
         if ev.button() == QtCore.Qt.MouseButton.RightButton:
             menu = self.menus[len(self.selected_shapes_copy) > 0]
             self.restore_cursor()
@@ -2383,6 +2880,10 @@ class Canvas(
                 self.selected_shapes_copy = []
                 self.repaint()
         elif ev.button() == QtCore.Qt.MouseButton.LeftButton:
+            if self._rotation_drag_shape is not None:
+                self._finish_rotation_handle_drag()
+                ev.accept()
+                return
             if self._vertex_erasing:
                 self._vertex_erasing = False
                 self.store_moving_shape()
@@ -2393,6 +2894,7 @@ class Canvas(
                     self.h_shape is not None
                     and self.h_shape_is_selected
                     and not self.moving_shape
+                    and not self.h_shape_is_hovered
                 ):
                     self.selection_changed.emit(
                         [x for x in self.selected_shapes if x != self.h_shape]
@@ -2604,9 +3106,9 @@ class Canvas(
         return f"G{group_id} · S{shape_count}"
 
     def _group_label_font(self):
-        return QtGui.QFont(
-            "Arial", int(max(6.0, int(round(8.0 / self.scale))))
-        )
+        font = QtGui.QFont("Arial")
+        font.setPointSizeF(self.label_font_size / self.scale)
+        return font
 
     def _group_label_rect(self, group_id, shape_count, group_rect):
         font = self._group_label_font()
@@ -3654,9 +4156,10 @@ class Canvas(
                     fill_color.blue(),
                     self.mask_opacity,
                 )
-                p.setPen(Qt.PenStyle.NoPen)
-                p.setBrush(fill_color_alpha)
-                p.drawPath(mask_path)
+                if not (self.moving_shape and shape.selected):
+                    p.setPen(Qt.PenStyle.NoPen)
+                    p.setBrush(fill_color_alpha)
+                    p.drawPath(mask_path)
 
                 outline_color = (
                     shape.select_line_color
@@ -3664,9 +4167,8 @@ class Canvas(
                     else shape.line_color
                 )
                 pen = QtGui.QPen(outline_color)
-                pen.setWidth(
-                    max(1, int(round(shape.line_width / Shape.scale)))
-                )
+                pen.setWidthF(float(shape.line_width))
+                pen.setCosmetic(True)
                 if shape.difficult:
                     pen.setStyle(Qt.PenStyle.DashLine)
                 p.setPen(pen)
@@ -3682,7 +4184,7 @@ class Canvas(
                 shape.fill = (
                     self._fill_drawing
                     and (shape.selected or shape == self.h_shape)
-                    and not (self.selected_vertex() and self.moving_shape)
+                    and not (self.moving_shape and shape.selected)
                 )
                 # Brush-edited shapes are drawn from their mask instead.
                 if not getattr(shape, "_brush_using_mask", False):
@@ -3746,10 +4248,13 @@ class Canvas(
                     p.drawPath(cp)
                     p.fillPath(cp, QtGui.QColor(255, 153, 0, 255))
 
+        self._paint_rotation_handles(p)
+
         self._paint_groups(p)
 
         # Draw live brush-edit overlays on top of the regular shapes.
         self._paint_brush_overlays(p)
+        self._paint_magic_wand_overlay(p)
 
         if self.current:
             self.current.paint(p)
@@ -3766,9 +4271,8 @@ class Canvas(
                     else self.current.line_color
                 )
                 pen = QtGui.QPen(color)
-                pen.setWidth(
-                    max(1, int(round(self.current.line_width / Shape.scale)))
-                )
+                pen.setWidthF(float(self.current.line_width))
+                pen.setCosmetic(True)
                 p.setPen(pen)
                 p.setBrush(Qt.BrushStyle.NoBrush)
                 p.drawLine(QtCore.QLineF(self.line[1], self.current.points[0]))
@@ -3868,16 +4372,14 @@ class Canvas(
 
         # Draw labels
         if self.show_labels:
-            p.setFont(
-                QtGui.QFont(
-                    "Arial", int(max(6.0, int(round(8.0 / Shape.scale))))
-                )
-            )
+            label_transform = p.transform()
+            p.save()
+            p.resetTransform()
+            p.setFont(QtGui.QFont("Arial", self.label_font_size))
             labels = []
             for shape in self.shapes:
                 if not shape.visible:
                     continue
-                d_react = shape.point_size / shape.scale
                 if shape.label in [
                     "AUTOLABEL_OBJECT",
                     "AUTOLABEL_ADD",
@@ -3917,21 +4419,24 @@ class Canvas(
                         bbox = shape.bounding_rect()
                     except IndexError:
                         continue
+                    point = label_transform.map(bbox.topLeft())
                     rect = QtCore.QRect(
-                        int(bbox.x()),
-                        int(bbox.y()),
+                        int(point.x()),
+                        int(point.y()),
                         rect_width,
                         rect_height,
                     )
                     text_pos = QtCore.QPoint(
-                        int(bbox.x() + padding_x),
-                        int(bbox.y() + rect_height - padding_y - fm.descent()),
+                        int(point.x() + padding_x),
+                        int(
+                            point.y() + rect_height - padding_y - fm.descent()
+                        ),
                     )
                 elif shape.shape_type == "circle":
                     points = shape.points
                     if not points:
                         continue
-                    point = points[0]
+                    point = label_transform.map(points[0])
                     rect = QtCore.QRect(
                         int(point.x() - rect_width / 2),
                         int(point.y() - rect_height / 2),
@@ -3955,15 +4460,15 @@ class Canvas(
                     points = shape.points
                     if not points:
                         continue
-                    point = points[0]
+                    point = label_transform.map(points[0])
                     rect = QtCore.QRect(
-                        int(point.x() + d_react),
+                        int(point.x() + shape.point_size),
                         int(point.y() - 15),
                         rect_width,
                         rect_height,
                     )
                     text_pos = QtCore.QPoint(
-                        int(point.x() + d_react + padding_x),
+                        int(point.x() + shape.point_size + padding_x),
                         int(
                             point.y()
                             - 15
@@ -3989,23 +4494,21 @@ class Canvas(
                 if not shape.visible:
                     continue
                 p.drawText(text_pos, label_text)
+            p.restore()
 
         # Draw mouse coordinates
         if self.cross_line_show:
-            pen = QtGui.QPen(
-                QtGui.QColor(self.cross_line_color),
-                max(1, int(round(self.cross_line_width / Shape.scale))),
-                Qt.PenStyle.DashLine,
-            )
+            pen = self._cross_line_pen()
+            rect = self._cross_line_rect()
             p.setPen(pen)
             p.setOpacity(self.cross_line_opacity)
             p.drawLine(
-                QtCore.QPointF(self.prev_move_point.x(), 0),
-                QtCore.QPointF(self.prev_move_point.x(), self.pixmap.height()),
+                QtCore.QPointF(self.prev_move_point.x(), rect.top()),
+                QtCore.QPointF(self.prev_move_point.x(), rect.bottom()),
             )
             p.drawLine(
-                QtCore.QPointF(0, self.prev_move_point.y()),
-                QtCore.QPointF(self.pixmap.width(), self.prev_move_point.y()),
+                QtCore.QPointF(rect.left(), self.prev_move_point.y()),
+                QtCore.QPointF(rect.right(), self.prev_move_point.y()),
             )
 
         # Draw attributes
@@ -4240,7 +4743,9 @@ class Canvas(
         show_masks=True,
     ):
         old_shape_scale = Shape.scale
-        scratch = type(self)(parent=self.parent)
+        scratch = type(self)(
+            parent=self.parent, label_font_size=self.label_font_size
+        )
         scratch.resize(pixmap.size())
         scratch.pixmap = pixmap
         scratch.shapes = list(shapes)
@@ -4720,6 +5225,10 @@ class Canvas(
         if self.is_brush_mode and self.editing():
             if self._brush_key_press(ev):
                 return
+        if key == QtCore.Qt.Key.Key_Escape and self._magic_wand_active:
+            self._clear_magic_wand_preview()
+            ev.accept()
+            return
         if self.drawing():
             if key == QtCore.Qt.Key.Key_Escape and self.current:
                 self.current = None
@@ -4824,6 +5333,7 @@ class Canvas(
 
                 if self.moving_shape:
                     self.moving_shape = False
+                    self.update()
                 if self.rotating_shape:
                     self.rotating_shape = False
 
@@ -4875,6 +5385,8 @@ class Canvas(
     def load_pixmap(self, pixmap, clear_shapes=True):
         """Load pixmap"""
         self.cancel_brush_mode()
+        self._clear_magic_wand_preview()
+        self._magic_wand_source = None
         self.pixmap = pixmap
         if clear_shapes:
             self.shapes = []
@@ -4883,6 +5395,7 @@ class Canvas(
     def load_shapes(self, shapes, replace=True):
         """Load shapes"""
         self.cancel_brush_mode()
+        self._clear_magic_wand_preview()
         if replace:
             self.shapes = list(shapes)
         else:
@@ -4946,6 +5459,19 @@ class Canvas(
         self.cross_line_color = color
         self.cross_line_opacity = opacity
         self.update()
+
+    def _cross_line_pen(self) -> QtGui.QPen:
+        pen = QtGui.QPen(QtGui.QColor(self.cross_line_color))
+        pen.setWidthF(float(self.cross_line_width))
+        pen.setStyle(Qt.PenStyle.DashLine)
+        pen.setCosmetic(True)
+        return pen
+
+    def _cross_line_rect(self) -> QtCore.QRectF:
+        return QtCore.QRectF(
+            self.transform_pos(QtCore.QPointF()),
+            self.transform_pos(QtCore.QPointF(self.width(), self.height())),
+        )
 
     def gen_new_group_id(self):
         """Generate new shape's group_id based on current shapes"""

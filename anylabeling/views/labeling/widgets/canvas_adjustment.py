@@ -9,15 +9,93 @@ underlying image are displayed:
 - ``Contrast``   : contrast of the image, same range/mapping as brightness.
 
 The widget only emits signals; the actual rendering is handled by the owner
-(:class:`LabelingWidget`), which reuses the existing brightness/contrast
-pipeline so that 16-bit grayscale images keep working.
+(:class:`LabelingWidget`), which reuses the brightness/contrast processor so
+that 16-bit grayscale images keep working.
 """
 
-from PyQt6 import QtCore, QtWidgets
+import PIL.Image
+import PIL.ImageEnhance
+import numpy as np
+from PyQt6 import QtCore, QtGui, QtWidgets
 from PyQt6.QtCore import Qt
 
+from ..utils.image import pil_to_qimage
 from ..utils.qt import new_icon
 from ..utils.theme import get_theme
+
+GRAYSCALE_16BIT_MODES = {"I;16", "I;16L", "I;16B"}
+
+
+class BrightnessContrastProcessor:
+    """Apply display-only brightness and contrast adjustments to an image."""
+
+    def __init__(self):
+        self.img = None
+        self._grayscale16_data = None
+        self._grayscale16_mean = None
+        self._grayscale16_qimage_data = None
+
+    def update_image(self, image):
+        """Update the source image."""
+        assert isinstance(image, PIL.Image.Image)
+        self.clear_image()
+        self.img = image
+
+    def clear_image(self):
+        """Release resources associated with the current image."""
+        if self.img is not None:
+            self.img.close()
+        self.img = None
+        self._grayscale16_data = None
+        self._grayscale16_mean = None
+        self._grayscale16_qimage_data = None
+
+    def adjust(self, brightness, contrast):
+        """Return an adjusted image for the requested display factors."""
+        brightness = brightness / 50.0
+        contrast = contrast / 50.0
+
+        if (
+            self.img.mode in GRAYSCALE_16BIT_MODES
+            and self._grayscale16_data is None
+        ):
+            self._initialize_grayscale16()
+        if self._grayscale16_data is not None:
+            return self._enhance_grayscale16(brightness, contrast)
+
+        img = self.img
+        if brightness != 1:
+            img = PIL.ImageEnhance.Brightness(img).enhance(brightness)
+        if contrast != 1:
+            img = PIL.ImageEnhance.Contrast(img).enhance(contrast)
+        return pil_to_qimage(img)
+
+    def _initialize_grayscale16(self):
+        """Initialize data used for 16-bit grayscale enhancement."""
+        data = np.asarray(self.img).astype(np.uint16, copy=False)
+        if data.ndim == 2:
+            self._grayscale16_data = np.ascontiguousarray(data)
+            self._grayscale16_mean = float(self._grayscale16_data.mean())
+
+    def _enhance_grayscale16(self, brightness, contrast):
+        """Enhance a 16-bit grayscale image and return a QImage."""
+        if brightness == 1 and contrast == 1:
+            self._grayscale16_qimage_data = self._grayscale16_data
+        else:
+            data = self._grayscale16_data.astype(np.float32)
+            data *= brightness * contrast
+            data += self._grayscale16_mean * brightness * (1 - contrast)
+            np.clip(data, 0, np.iinfo(np.uint16).max, out=data)
+            self._grayscale16_qimage_data = data.astype(np.uint16)
+
+        height, width = self._grayscale16_qimage_data.shape
+        return QtGui.QImage(
+            self._grayscale16_qimage_data,
+            width,
+            height,
+            self._grayscale16_qimage_data.strides[0],
+            QtGui.QImage.Format.Format_Grayscale16,
+        )
 
 
 class CanvasAdjustmentWidget(QtWidgets.QWidget):
@@ -26,7 +104,7 @@ class CanvasAdjustmentWidget(QtWidgets.QWidget):
     # Emitted when the opacity slider changes. Value is in range 0-100.
     opacity_changed = QtCore.pyqtSignal(int)
     # Emitted when brightness or contrast changes. Values are in range 0-150
-    # (same scale as BrightnessContrastDialog; factor = value / 50).
+    # (factor = value / 50).
     brightness_contrast_changed = QtCore.pyqtSignal(int, int)
     geometry_changed = QtCore.pyqtSignal()
 
@@ -38,8 +116,7 @@ class CanvasAdjustmentWidget(QtWidgets.QWidget):
     OPACITY_MAX = 100
     OPACITY_DEFAULT = 100
 
-    # Brightness/contrast: identical to BrightnessContrastDialog's sliders so
-    # the values and initial handle position match the menu-driven dialog.
+    # Brightness/contrast factors use 50 as the neutral value.
     BC_MIN = 0
     BC_MAX = 150
     BC_DEFAULT = 50  # 50 / 50 == 1.00 (neutral)
@@ -62,6 +139,7 @@ class CanvasAdjustmentWidget(QtWidgets.QWidget):
         super().__init__(parent)
         self.setObjectName("canvas_adjustment")
         self._collapsed = False
+        self.setProperty("collapsed", False)
         # A bare QWidget ignores stylesheet background/border unless it is
         # told to paint a styled background; without this the translucent
         # card behind the sliders never shows.
@@ -152,6 +230,9 @@ class CanvasAdjustmentWidget(QtWidgets.QWidget):
             background: rgba(255, 255, 255, 220);
             border: none;
             border-radius: 6px;
+        }}
+        #canvas_adjustment[collapsed="true"] {{
+            background: transparent;
         }}
         #canvas_adjustment QSlider::groove:horizontal {{
             height: 4px;
@@ -255,7 +336,11 @@ class CanvasAdjustmentWidget(QtWidgets.QWidget):
 
     def _toggle_collapsed(self):
         self._collapsed = not self._collapsed
+        self.setProperty("collapsed", self._collapsed)
+        self.title_label.setVisible(not self._collapsed)
         self.content_widget.setVisible(not self._collapsed)
+        margins = (4, 4, 4, 4) if self._collapsed else (10, 8, 10, 8)
+        self.layout().setContentsMargins(*margins)
         icon = "caret-down" if self._collapsed else "caret-up"
         self.toggle_button.setIcon(new_icon(icon, "svg"))
         tooltip = (
@@ -264,6 +349,9 @@ class CanvasAdjustmentWidget(QtWidgets.QWidget):
             else self.tr("Collapse adjustments")
         )
         self.toggle_button.setToolTip(tooltip)
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.layout().activate()
         self.adjustSize()
         self.geometry_changed.emit()
 

@@ -15,6 +15,34 @@ COLORS: Dict[str, str] = {
     "ERROR": "red",
 }
 
+EMOJI_PREFIXES = (
+    "🔧️ ",
+    "🔧 ",
+    "🔄 ",
+    "🖥️ ",
+    "🖼️ ",
+    "🎉 ",
+    "🌐 ",
+    "⌛ ",
+    "✅ ",
+    "❌ ",
+    "⚠️ ",
+    "🚀 ",
+    "📥 ",
+    "📤 ",
+)
+
+
+def strip_emoji_prefix(text: str) -> str:
+    lines = []
+    for line in text.split("\n"):
+        for prefix in EMOJI_PREFIXES:
+            if line.startswith(prefix):
+                line = line.removeprefix(prefix)
+                break
+        lines.append(line)
+    return "\n".join(lines)
+
 
 def singleton(cls):
     instances = {}
@@ -43,10 +71,13 @@ class ColoredFormatter(logging.Formatter):
         def colored(text, color):
             return termcolor.colored(text, color=color, attrs={"bold": True})
 
+        message = record.msg
+        if isinstance(message, str):
+            message = strip_emoji_prefix(message)
         record.levelname2 = colored(
             f"{record.levelname:<7}", COLORS[record.levelname]
         )
-        record.message2 = colored(record.msg, COLORS[record.levelname])
+        record.message2 = colored(message, COLORS[record.levelname])
         record.asctime2 = termcolor.colored(
             self.formatTime(record, self.datefmt), color="green"
         )
@@ -75,7 +106,7 @@ class AppLogger:
     def _setup_handler(self):
         stream_handler = logging.StreamHandler(sys.stderr)
         handler_format = ColoredFormatter(
-            "%(asctime)s | %(levelname2)s | %(module2)s:%(funcName2)s:%(lineno2)s - %(message2)s"
+            "%(asctime)s | %(levelname2)s | %(module2)s:%(funcName2)s:%(lineno2)s %(message2)s"
         )
         stream_handler.setFormatter(handler_format)
         # Matches the CLI's default --logger-level until overridden via

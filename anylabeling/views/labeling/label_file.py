@@ -1,8 +1,9 @@
 import base64
 import json
+import os
 import os.path as osp
+import tempfile
 
-import PIL.Image
 from PIL import ImageFile
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -10,10 +11,12 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 from . import utils
 from .label_converter import LabelConverter
 from .logger import logger
-from .schema import XLABEL_BASIC_FIELDS, create_xlabel_template
+from .schema import (
+    IMAGE_TAGS_FIELD,
+    XLABEL_BASIC_FIELDS,
+    create_xlabel_template,
+)
 from .shape import Shape
-
-PIL.Image.MAX_IMAGE_PIXELS = None
 
 
 class LabelFileError(Exception):
@@ -34,19 +37,19 @@ class LabelFile:
 
     @staticmethod
     def _check_image_height_and_width(image_data, image_height, image_width):
-        img_arr = utils.img_b64_to_arr(image_data)
-        if image_height is not None and img_arr.shape[0] != image_height:
+        actual_width, actual_height = utils.get_pil_img_dim(image_data)
+        if image_height is not None and actual_height != image_height:
             logger.error(
                 "image_height does not match with image_data or image_path, "
                 "so getting image_height from actual image."
             )
-            image_height = img_arr.shape[0]
-        if image_width is not None and img_arr.shape[1] != image_width:
+            image_height = actual_height
+        if image_width is not None and actual_width != image_width:
             logger.error(
                 "image_width does not match with image_data or image_path, "
                 "so getting image_width from actual image."
             )
-            image_width = img_arr.shape[1]
+            image_width = actual_width
         return image_height, image_width
 
     @staticmethod
@@ -90,7 +93,6 @@ class LabelFile:
             data["imagePath"] = osp.basename(data["imagePath"])
             if data["imageData"] is not None:
                 image_data = base64.b64decode(data["imageData"])
-                image_data_b64 = data["imageData"]
             else:
                 # relative path from label file to relative path from cwd
                 if self.image_dir:
@@ -100,16 +102,11 @@ class LabelFile:
                         osp.dirname(filename), data["imagePath"]
                     )
                 image_data = self.load_image_file(image_path)
-                image_data_b64 = base64.b64encode(image_data).decode("utf-8")
 
             flags = data.get("flags", {})
             image_path = data["imagePath"]
 
-            self._check_image_height_and_width(
-                image_data_b64,
-                data.get("imageHeight"),
-                data.get("imageWidth"),
-            )
+            utils.get_pil_img_dim(image_data)
 
             shapes = [Shape().load_from_dict(s) for s in data["shapes"]]
 
@@ -120,6 +117,11 @@ class LabelFile:
         for key, value in data.items():
             if key not in XLABEL_BASIC_FIELDS:
                 other_data[key] = value
+
+        if IMAGE_TAGS_FIELD in data:
+            other_data[IMAGE_TAGS_FIELD] = utils.normalize_image_tags(
+                data[IMAGE_TAGS_FIELD], filename
+            )
 
         # Add new fields if not available
         other_data["description"] = other_data.get("description", "")
@@ -145,10 +147,10 @@ class LabelFile:
         flags=None,
     ):
         if image_data is not None:
-            image_data = base64.b64encode(image_data).decode("utf-8")
             image_height, image_width = self._check_image_height_and_width(
                 image_data, image_height, image_width
             )
+            image_data = base64.b64encode(image_data).decode("utf-8")
 
         if other_data is None:
             other_data = {}
@@ -184,9 +186,25 @@ class LabelFile:
                 continue
             assert key not in data
             data[key] = value
+        temporary_file = None
         try:
-            with utils.io_open(filename, "w") as f:
+            directory = osp.dirname(osp.abspath(filename))
+            fd, temporary_file = tempfile.mkstemp(
+                prefix=".xal_",
+                suffix=".tmp",
+                dir=directory,
+            )
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temporary_file, filename)
             self.filename = filename
         except Exception as e:  # noqa
             raise LabelFileError(e) from e
+        finally:
+            if temporary_file and osp.exists(temporary_file):
+                try:
+                    os.remove(temporary_file)
+                except OSError:
+                    pass

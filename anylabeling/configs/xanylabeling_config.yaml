@@ -1,5 +1,6 @@
 language: en_US
 theme: auto  # auto, light, dark
+font_family: null  # null uses the system default font
 model_hub: github  # github, modelscope
 device: null  # CPU, GPU
 auto_save: true
@@ -40,10 +41,6 @@ default_shape_color: [0, 255, 0]
 shape_color: auto  # null, 'auto', 'manual'
 shift_auto_shape_color: 0
 label_colors: null
-
-training:
-  ultralytics:
-    project_readonly: true
 
 shape:
   # drawing
@@ -94,6 +91,7 @@ fit_to_content:
 
 # canvas
 canvas:
+  label_font_size: 8
   epsilon: 10.0
   # None: do nothing
   # close: close polygon
@@ -124,6 +122,12 @@ canvas:
     simplify_epsilon: 2.0
     max_undo_steps: 30
     max_undo_memory_mb: 128
+  magic_wand:
+    default_threshold: 15
+    drag_sensitivity: 3.0  # screen pixels per tolerance step
+    luminance_weight: 0.5
+    simplify_epsilon: 0.5
+    opacity: 0.6
   cuboid:
     default_depth_vector: [24.0, -24.0]
     min_depth: 5.0
@@ -159,17 +163,19 @@ shortcuts:
   fit_window: Ctrl+F
   fit_width: Ctrl+Shift+F
   show_navigator: F9
+  toggle_image_tags: Ctrl+Shift+T
 
   create_polygon: P
   create_brush_polygon: Ctrl+N
+  create_magic_wand: Shift+W
   create_rectangle: R
   create_cuboid: Ctrl+R
   create_rotation: O
   create_quadrilateral: T
-  create_circle: null
-  create_line: null
-  create_point: null
-  create_linestrip: null
+  create_circle: Shift+C
+  create_line: Shift+L
+  create_point: Shift+P
+  create_linestrip: Shift+S
   edit_polygon: Ctrl+J
   edit_brush_mode: Shift+B
   delete_polygon: Delete

@@ -146,7 +146,11 @@ def get_default_config():
         shutil.copyfile(old_cfg_file, new_cfg_file)
 
     config_file = "xanylabeling_config.yaml"
-    with pkg_resources.open_text(anylabeling_configs, config_file) as f:
+    with (
+        pkg_resources.files(anylabeling_configs)
+        .joinpath(config_file)
+        .open(encoding="utf-8") as f
+    ):
         config = yaml.safe_load(f)
 
     if not osp.exists(osp.join(work_dir, ".xanylabelingrc")):
@@ -156,6 +160,14 @@ def get_default_config():
 
 
 def validate_config_item(key, value):
+    if (
+        key == "font_family"
+        and value is not None
+        and (not isinstance(value, str) or not value.strip())
+    ):
+        raise ValueError(
+            f"Unexpected value for config key 'font_family': {value}"
+        )
     if key == "validate_label" and value not in [None, "exact"]:
         raise ValueError(
             f"Unexpected value for config key 'validate_label': {value}"

@@ -6,6 +6,7 @@ import os
 import os.path as osp
 import re
 import shutil
+import zlib
 from typing import Optional
 
 import cv2
@@ -56,6 +57,7 @@ from .utils.style import (
 from ...config import get_config, save_config
 from .label_file import LabelFile, LabelFileError
 from .logger import logger
+from .schema import IMAGE_TAGS_FIELD
 from .settings import SettingsController, SettingsDialog
 from .settings.runtime_applier import SettingsRuntimeApplier
 from .shape import Shape
@@ -68,7 +70,7 @@ from .utils.qt import new_icon_path
 from .widgets import (
     AboutDialog,
     AutoLabelingWidget,
-    BrightnessContrastDialog,
+    BrightnessContrastProcessor,
     Canvas,
     CanvasAdjustmentWidget,
     ChatbotDialog,
@@ -76,12 +78,12 @@ from .widgets import (
     CompareViewManager,
     CompareViewSlider,
     VQADialog,
-    CrosshairSettingsDialog,
     FileDialogPreview,
     PPOCRDialog,
     VideoClassifierDialog,
     ShapeModifyDialog,
     GroupIDFilterComboBox,
+    ImageTagsWidget,
     LabelDialog,
     LabelFilterComboBox,
     LabelListWidget,
@@ -132,13 +134,17 @@ def _find_next_label_loop_shape(shapes, start_index, canvas_shapes):
     return len(shapes), None
 
 
-def _create_file_status_icon(color):
+def _create_file_status_icon(color, filled=True):
     pixmap = QtGui.QPixmap(12, 12)
     pixmap.fill(Qt.GlobalColor.transparent)
     painter = QtGui.QPainter(pixmap)
     painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-    painter.setBrush(QtGui.QColor(color))
-    painter.setPen(Qt.PenStyle.NoPen)
+    if filled:
+        painter.setBrush(QtGui.QColor(color))
+        painter.setPen(Qt.PenStyle.NoPen)
+    else:
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QtGui.QPen(QtGui.QColor(color), 1.5))
     painter.drawEllipse(2, 2, 8, 8)
     painter.end()
     return QtGui.QIcon(pixmap)
@@ -200,6 +206,7 @@ class LabelingWidget(LabelDialog):
         )
         self._settings_controller = None
         self._settings_dialog = None
+        self.training_dialog = None
         self._settings_runtime_applier = SettingsRuntimeApplier(self)
         self._auto_switch_signal_connected = False
 
@@ -233,10 +240,9 @@ class LabelingWidget(LabelDialog):
         self._copied_shapes = None
         self._copied_group_id = None
         self._batch_edit_warning_shown = False
+        self._batch_processing_active = False
 
-        self.brightness_contrast_dialog = BrightnessContrastDialog(
-            self.on_new_brightness_contrast, parent=self
-        )
+        self.brightness_contrast_processor = BrightnessContrastProcessor()
 
         # Main widgets and related state.
         self.label_dialog = LabelDialog(
@@ -351,7 +357,9 @@ class LabelingWidget(LabelDialog):
         self.file_list_widget.setIconSize(QtCore.QSize(12, 12))
         self.file_status_icons = {
             True: _create_file_status_icon(FILE_CHECKED_COLOR),
-            False: _create_file_status_icon(FILE_UNCHECKED_COLOR),
+            False: _create_file_status_icon(
+                FILE_UNCHECKED_COLOR, filled=False
+            ),
         }
         self.file_list_widget.itemSelectionChanged.connect(
             self.file_selection_changed
@@ -397,6 +405,7 @@ class LabelingWidget(LabelDialog):
 
         self.canvas = self.label_list.canvas = Canvas(
             parent=self,
+            label_font_size=self._config["canvas"]["label_font_size"],
             epsilon=self._config["canvas"]["epsilon"],
             double_click=self._config["canvas"]["double_click"],
             num_backups=self._config["canvas"]["num_backups"],
@@ -410,6 +419,7 @@ class LabelingWidget(LabelDialog):
             rotation=self._config["canvas"].get("rotation", {}),
             mask=self._config["canvas"].get("mask", {}),
             brush=self._config["canvas"].get("brush", {}),
+            magic_wand=self._config["canvas"].get("magic_wand", {}),
             cuboid=self._config["canvas"].get("cuboid", {}),
             double_click_edit_label=self._config["canvas"].get(
                 "double_click_edit_label", True
@@ -499,6 +509,17 @@ class LabelingWidget(LabelDialog):
         self.canvas.set_cross_line(**self.crosshair_settings)
 
         self._central_widget = scroll_area
+
+        self._image_tags_visibility = "auto"
+        self.image_tags_widget = ImageTagsWidget(
+            self._get_rgb_by_image_tag, self
+        )
+        self.image_tags_widget.tags_changed.connect(
+            self._on_image_tags_changed
+        )
+        self.image_tags_widget.status_message.connect(self.status)
+        self.image_tags_widget.set_interactions_enabled(False)
+        self.image_tags_widget.hide()
 
         features = QtWidgets.QDockWidget.DockWidgetFeature(0)
         for dock in [
@@ -743,6 +764,17 @@ class LabelingWidget(LabelDialog):
             self.tr("Toggle brush mode for drawing polygons"),
             enabled=False,
         )
+        create_magic_wand_mode = action(
+            self.tr("Magic Wand"),
+            self.toggle_magic_wand_mode,
+            shortcuts.get("create_magic_wand"),
+            "magic_wand",
+            self.tr(
+                "Select a contiguous color region; drag to adjust tolerance; "
+                "right-click to finish; press Esc to cancel"
+            ),
+            enabled=False,
+        )
         create_rectangle_mode = action(
             self.tr("Create Rectangle"),
             lambda: self.toggle_draw_mode(False, create_mode="rectangle"),
@@ -902,7 +934,7 @@ class LabelingWidget(LabelDialog):
             self.tr("Group Selected Shapes"),
             self.group_selected_shapes,
             shortcuts["group_selected_shapes"],
-            None,
+            "group-shapes",
             self.tr("Group shapes by assigning a same group_id"),
             enabled=True,
         )
@@ -910,7 +942,7 @@ class LabelingWidget(LabelDialog):
             self.tr("Ungroup Selected Shapes"),
             self.ungroup_selected_shapes,
             shortcuts["ungroup_selected_shapes"],
-            None,
+            "ungroup-shapes",
             self.tr("Ungroup shapes"),
             enabled=True,
         )
@@ -976,7 +1008,7 @@ class LabelingWidget(LabelDialog):
             self.tr("Hide Selected Polygons"),
             self.hide_selected_polygons,
             shortcuts["hide_selected_polygons"],
-            None,
+            "hide-selected",
             self.tr("Hide selected polygons"),
             enabled=True,
         )
@@ -984,7 +1016,7 @@ class LabelingWidget(LabelDialog):
             self.tr("Show Hidden Polygons"),
             self.show_hidden_polygons,
             shortcuts["show_hidden_polygons"],
-            None,
+            "show-hidden",
             self.tr("Show hidden polygons"),
             enabled=True,
         )
@@ -1098,7 +1130,7 @@ class LabelingWidget(LabelDialog):
                 "open_image_classifier", shortcuts.get("open_classifier")
             ),
             icon="ragdoll",
-            tip=self.tr("Open classifier dialog"),
+            tip=self.tr("Open image classifier dialog"),
         )
         open_video_classifier = action(
             self.tr("Video Classifier"),
@@ -1119,6 +1151,12 @@ class LabelingWidget(LabelDialog):
             self.documentation,
             icon="docs",
             tip=self.tr("Show documentation"),
+        )
+        sponsor = action(
+            self.tr("Sponsor"),
+            self.sponsor,
+            icon="brush_polygon",
+            tip=self.tr("Open sponsor page"),
         )
         about = action(
             self.tr("About"),
@@ -1240,20 +1278,6 @@ class LabelingWidget(LabelDialog):
             self.tr("Zoom follows window width"),
             checkable=True,
             enabled=False,
-        )
-        brightness_contrast = action(
-            self.tr("Set Brightness Contrast"),
-            self.brightness_contrast,
-            None,
-            "color",
-            "Adjust brightness and contrast",
-            enabled=False,
-        )
-        set_cross_line = action(
-            self.tr("Set Cross Line"),
-            self.set_cross_line,
-            tip=self.tr("Adjust cross line for mouse position"),
-            icon="cartesian",
         )
         show_groups = action(
             self.tr("Show Groups"),
@@ -1391,6 +1415,7 @@ class LabelingWidget(LabelDialog):
             _act.setCheckable(True)
             _act.setChecked(current_appearance == _mode)
             _act.setData(_mode)
+            _act.setIcon(utils.new_icon(f"theme-{_mode}"))
             _act.triggered.connect(
                 functools.partial(self._on_theme_changed, _mode)
             )
@@ -1738,6 +1763,16 @@ class LabelingWidget(LabelDialog):
             enabled=True,
         )
 
+        show_image_tags = action(
+            self.tr("Image Tags"),
+            self.toggle_image_tags_visibility,
+            shortcuts["toggle_image_tags"],
+            tip=self.tr("Show or hide image tags"),
+            checkable=True,
+            checked=False,
+            enabled=True,
+        )
+
         # AI Actions
         toggle_auto_labeling_widget = action(
             self.tr("Auto Labeling"),
@@ -1788,6 +1823,7 @@ class LabelingWidget(LabelDialog):
             remove_point=remove_point,
             create_mode=create_mode,
             create_brush_polygon_mode=create_brush_polygon_mode,
+            create_magic_wand_mode=create_magic_wand_mode,
             edit_mode=edit_mode,
             edit_brush_mode=edit_brush_mode,
             create_rectangle_mode=create_rectangle_mode,
@@ -1855,8 +1891,6 @@ class LabelingWidget(LabelDialog):
             keep_prev_contrast=keep_prev_contrast,
             fit_window=fit_window,
             fit_width=fit_width,
-            brightness_contrast=brightness_contrast,
-            set_cross_line=set_cross_line,
             show_groups=show_groups,
             show_masks=show_masks,
             show_texts=show_texts,
@@ -1866,6 +1900,7 @@ class LabelingWidget(LabelDialog):
             show_attributes=show_attributes,
             show_linking=show_linking,
             show_navigator=show_navigator,
+            show_image_tags=show_image_tags,
             zoom_actions=zoom_actions,
             open_next_image=open_next_image,
             open_prev_image=open_prev_image,
@@ -1919,6 +1954,7 @@ class LabelingWidget(LabelDialog):
             menu=(
                 create_mode,
                 create_brush_polygon_mode,
+                create_magic_wand_mode,
                 create_rectangle_mode,
                 create_cuboid_mode,
                 create_rotation_mode,
@@ -1948,6 +1984,7 @@ class LabelingWidget(LabelDialog):
                 close,
                 create_mode,
                 create_brush_polygon_mode,
+                create_magic_wand_mode,
                 create_rectangle_mode,
                 create_cuboid_mode,
                 create_rotation_mode,
@@ -1967,7 +2004,6 @@ class LabelingWidget(LabelDialog):
                 digit_shortcut_8,
                 digit_shortcut_9,
                 edit_mode,
-                brightness_contrast,
                 toggle_annotation_checked,
                 shape_manager,
                 loop_thru_labels,
@@ -2013,6 +2049,7 @@ class LabelingWidget(LabelDialog):
             help=self.menu(self.tr("Help")),
             recent_files=QtWidgets.QMenu(self.tr("Open Recent")),
         )
+        self.menus.recent_files.setIcon(utils.new_icon("recent"))
         self.menus.recent_files.aboutToShow.connect(self.update_file_menu)
         self.canvas_label_filter_menu_0 = None
         self.canvas_gid_filter_menu_0 = None
@@ -2064,6 +2101,7 @@ class LabelingWidget(LabelDialog):
             self.menus.help,
             (
                 documentation,
+                sponsor,
                 None,
                 about,
             ),
@@ -2142,6 +2180,7 @@ class LabelingWidget(LabelDialog):
             self.menus.view,
             (
                 show_navigator,
+                show_image_tags,
                 fill_drawing,
                 loop_thru_labels,
                 loop_select_labels,
@@ -2156,9 +2195,6 @@ class LabelingWidget(LabelDialog):
                 None,
                 fit_window,
                 fit_width,
-                None,
-                brightness_contrast,
-                set_cross_line,
                 None,
                 show_masks,
                 show_texts,
@@ -2214,6 +2250,7 @@ class LabelingWidget(LabelDialog):
             None,
             create_mode,
             self.actions.create_brush_polygon_mode,
+            self.actions.create_magic_wand_mode,
             self.actions.create_rectangle_mode,
             self.actions.create_cuboid_mode,
             self.actions.create_rotation_mode,
@@ -2324,6 +2361,7 @@ class LabelingWidget(LabelDialog):
         central_layout.addWidget(self.auto_labeling_widget)
         central_layout.addWidget(scroll_area)
         central_layout.addWidget(self.compare_view_slider)
+        central_layout.addWidget(self.image_tags_widget)
         layout.addLayout(central_layout)
 
         # Save central area for resize
@@ -2562,6 +2600,7 @@ class LabelingWidget(LabelDialog):
             apply_callback=self._settings_runtime_applier.apply_change,
             parent=self,
             defer_runtime_apply=True,
+            preview_keys={"shape.line_width", "canvas.crosshair.width"},
         )
         self._settings_runtime_applier.build_shortcut_action_map()
 
@@ -2862,6 +2901,7 @@ class LabelingWidget(LabelDialog):
         actions = (
             self.actions.create_mode,
             self.actions.create_brush_polygon_mode,
+            self.actions.create_magic_wand_mode,
             self.actions.create_rectangle_mode,
             self.actions.create_cuboid_mode,
             self.actions.create_rotation_mode,
@@ -2901,17 +2941,55 @@ class LabelingWidget(LabelDialog):
             self.update_navigator_shapes()
         self.update_progress_title()
 
+    def _on_image_tags_changed(self, tags):
+        if not self.image_path:
+            return
+        self.other_data[IMAGE_TAGS_FIELD] = list(tags)
+        self.set_dirty()
+
+    def toggle_image_tags_visibility(self, checked):
+        self._image_tags_visibility = (
+            "explicit_visible" if checked else "explicit_hidden"
+        )
+        self.image_tags_widget.setVisible(checked)
+
+    def _auto_show_image_tags(self):
+        if self._image_tags_visibility != "auto":
+            return
+        with QtCore.QSignalBlocker(self.actions.show_image_tags):
+            self.actions.show_image_tags.setChecked(True)
+        self.image_tags_widget.show()
+
+    def _get_rgb_by_image_tag(self, label):
+        for shape in self.canvas.shapes:
+            if shape.label == label:
+                return shape.line_color.getRgb()[:3]
+        label_colors = self._config.get("label_colors") or {}
+        if label in label_colors:
+            return tuple(label_colors[label])
+        label_id = zlib.crc32(label.encode("utf-8"))
+        hue = label_id % 360
+        saturation = 110 + ((label_id >> 9) % 66)
+        value = 225 + ((label_id >> 16) % 26)
+        return QtGui.QColor.fromHsv(hue, saturation, value).getRgb()[:3]
+
     def _window_title(self):
         title = __appname__
         if self.filename is not None:
             current_index, total_count = self.get_image_progress_info()
             basename = osp.basename(str(self.filename))
             dirty_marker = "*" if self.dirty else ""
+            checked_status = (
+                self.tr("Checked")
+                if self._annotation_checked()
+                else self.tr("Unchecked")
+            )
             image_size = ""
             if hasattr(self, "image") and not self.image.isNull():
                 image_size = f" [{self.image.width()}x{self.image.height()}]"
             title = (
-                f"{title} - {basename}{dirty_marker}{image_size} "
+                f"{title} - {basename}{dirty_marker} [{checked_status}]"
+                f"{image_size} "
                 f"[{current_index}/{total_count}]"
             )
         return title
@@ -2925,6 +3003,7 @@ class LabelingWidget(LabelDialog):
         self.actions.union_selection.setEnabled(False)
         self.actions.create_mode.setEnabled(True)
         self.actions.create_brush_polygon_mode.setEnabled(True)
+        self.actions.create_magic_wand_mode.setEnabled(True)
         self.actions.create_rectangle_mode.setEnabled(True)
         self.actions.create_cuboid_mode.setEnabled(True)
         self.actions.create_rotation_mode.setEnabled(True)
@@ -2987,8 +3066,11 @@ class LabelingWidget(LabelDialog):
         self.image_data = None
         self.label_file = None
         self.other_data = {}
+        if hasattr(self, "image_tags_widget"):
+            self.image_tags_widget.set_interactions_enabled(False)
+            self.image_tags_widget.set_tags([])
         self.canvas.reset_state()
-        self.brightness_contrast_dialog.clear_image()
+        self.brightness_contrast_processor.clear_image()
         if hasattr(self, "canvas_adjustment"):
             self.canvas_adjustment.hide()
         self.compare_view_manager.reset()
@@ -3080,7 +3162,11 @@ class LabelingWidget(LabelDialog):
             text = most_similar_label
 
         new_attributes = {
-            attrs_key: attrs_val[0]
+            attrs_key: (
+                attrs_val[0]
+                if isinstance(attrs_val, list) and attrs_val
+                else attrs_val
+            )
             for attrs_key, attrs_val in self.attributes[text].items()
         }
         shape.attributes = new_attributes
@@ -3242,17 +3328,25 @@ class LabelingWidget(LabelDialog):
 
     # Trainer
     def start_training(self, mode):
-        if mode == "ultralytics":
-            dialog = UltralyticsDialog(self)
-        else:
+        if mode != "ultralytics":
             return
 
         try:
-            _ = dialog.exec()
+            if self.training_dialog is None:
+                self.training_dialog = UltralyticsDialog(self)
+                self.training_dialog.destroyed.connect(
+                    self.on_training_dialog_destroyed
+                )
+            self.training_dialog.showNormal()
+            self.training_dialog.raise_()
+            self.training_dialog.activateWindow()
         except Exception as e:
             self.error_message(
                 "Start Error", f"Failed to start training dialog: {str(e)}"
             )
+
+    def on_training_dialog_destroyed(self, _dialog=None):
+        self.training_dialog = None
 
     # Tools
     def overview(self):
@@ -3326,6 +3420,16 @@ class LabelingWidget(LabelDialog):
             self.ppocr_window.show()
 
     def open_video_classifier(self):
+        if VideoClassifierDialog is None:
+            popup = Popup(
+                text=self.tr(
+                    "Video Classifier requires QtMultimedia, which this "
+                    "Qt build does not provide."
+                ),
+                parent=self,
+            )
+            popup.show_popup(self, position="center")
+            return
         if (
             not hasattr(self, "video_classifier_window")
             or self.video_classifier_window is None
@@ -3374,10 +3478,15 @@ class LabelingWidget(LabelDialog):
 
     # Help
     def documentation(self):
+        locale = "/zh-Hans" if self._config["language"] == "zh_CN" else ""
         url = (
-            "https://github.com/CVHub520/X-AnyLabeling/tree/main/docs"  # NOQA
+            f"https://xanylabeling.com{locale}/docs/"
+            "x-anylabeling/get_started"
         )
         utils.general.open_url(url)
+
+    def sponsor(self):
+        utils.general.open_url("https://xanylabeling.com/sponsor")
 
     def about(self):
         about_dialog = AboutDialog(self)
@@ -3572,6 +3681,7 @@ class LabelingWidget(LabelDialog):
                 self.canvas.cancel_brush_mode()
             elif self.actions.edit_brush_mode.isChecked():
                 self.actions.edit_brush_mode.setChecked(False)
+        self.canvas.set_magic_wand_mode(False)
         # Disable auto labeling if needed
         if (
             disable_auto_labeling
@@ -3590,6 +3700,7 @@ class LabelingWidget(LabelDialog):
         if edit:
             self.actions.create_mode.setEnabled(True)
             self.actions.create_brush_polygon_mode.setEnabled(True)
+            self.actions.create_magic_wand_mode.setEnabled(True)
             self.actions.create_rectangle_mode.setEnabled(True)
             self.actions.create_cuboid_mode.setEnabled(True)
             self.actions.create_rotation_mode.setEnabled(True)
@@ -3626,6 +3737,7 @@ class LabelingWidget(LabelDialog):
                 raise ValueError(f"Unsupported create_mode: {create_mode}")
             self.actions.create_mode.setEnabled(True)
             self.actions.create_brush_polygon_mode.setEnabled(True)
+            self.actions.create_magic_wand_mode.setEnabled(True)
             self.actions.create_rectangle_mode.setEnabled(True)
             self.actions.create_cuboid_mode.setEnabled(True)
             self.actions.create_rotation_mode.setEnabled(True)
@@ -3651,6 +3763,16 @@ class LabelingWidget(LabelDialog):
         self.canvas._brush_drawing = True
         self.actions.create_mode.setEnabled(True)
         self.actions.create_brush_polygon_mode.setEnabled(False)
+
+    def toggle_magic_wand_mode(self):
+        """Toggle thresholded flood selection for polygon creation."""
+        if self.canvas.drawing() and self.canvas.is_magic_wand_mode:
+            self.toggle_draw_mode(True)
+            return
+        self.toggle_draw_mode(False, create_mode="polygon")
+        self.canvas.set_magic_wand_mode(True)
+        self.actions.create_mode.setEnabled(True)
+        self.actions.create_magic_wand_mode.setEnabled(False)
 
     def set_edit_mode(self):
         # Disable auto labeling
@@ -3875,6 +3997,7 @@ class LabelingWidget(LabelDialog):
     def _sync_annotation_checked_state(self):
         self._update_annotation_checked_action()
         self._update_current_file_checked_item()
+        self.update_progress_title()
 
     def set_annotation_checked(self, checked):
         if self.filename is None or self.image.isNull():
@@ -4040,7 +4163,7 @@ class LabelingWidget(LabelDialog):
             return
 
         for shape in shapes:
-            if self.attributes and text:
+            if self.attributes and text and text != shape.label:
                 text = self.reset_attribute(text, shape)
 
             shape.label = text
@@ -4127,7 +4250,7 @@ class LabelingWidget(LabelDialog):
                 ),
             )
             return
-        if self.attributes and text:
+        if self.attributes and text and text != shape.label:
             text = self.reset_attribute(text, shape)
         shape.label = text
         shape.flags = flags
@@ -4204,11 +4327,14 @@ class LabelingWidget(LabelDialog):
 
     def attribute_selection_changed(self, i, property, combo):
         selected_option = combo.currentText()
+        tooltip = combo.currentData(Qt.ItemDataRole.ToolTipRole)
+        combo.setToolTip(tooltip or "")
         if i < len(self.canvas.shapes):
             if not self.canvas.shapes[i].attributes:
                 self.canvas.shapes[i].attributes = {}
             self.canvas.shapes[i].attributes[property] = selected_option
             self.save_attributes(self.canvas.shapes)
+            self.canvas.update()
 
     def attribute_radio_changed(self, i, property, option, checked):
         if checked and i < len(self.canvas.shapes):
@@ -4225,6 +4351,7 @@ class LabelingWidget(LabelDialog):
                 self.canvas.shapes[i].attributes = {}
             self.canvas.shapes[i].attributes[property] = line_text
             self.save_attributes(self.canvas.shapes)
+            self.canvas.update()
 
     def update_selected_options(self, selected_options):
         if not isinstance(selected_options, dict):
@@ -4274,15 +4401,37 @@ class LabelingWidget(LabelDialog):
         current_attibute = self.attributes[update_category]
         if not update_shape.attributes:
             update_shape.attributes = {}
+        attributes_changed = False
 
         self.grid_layout = QGridLayout()
         row_counter = 0
+
+        def unknown_value_tooltip(value):
+            return self.tr(
+                "Value '{}' is not defined in the current attribute "
+                "configuration."
+            ).format(value)
+
+        def set_current_combo_value(combo, value):
+            value = str(value)
+            index = combo.findText(value)
+            if index < 0:
+                combo.addItem(value)
+                index = combo.count() - 1
+                tooltip = unknown_value_tooltip(value)
+                combo.setItemData(index, tooltip, Qt.ItemDataRole.ToolTipRole)
+                combo.setToolTip(tooltip)
+            combo.setCurrentIndex(index)
 
         for property, options in current_attibute.items():
             widget_type = self.attribute_widget_types.get(
                 update_category, {}
             ).get(property, "combobox")
-            current_value = update_shape.attributes.get(property, None)
+            has_current_value = property in update_shape.attributes
+            current_value = update_shape.attributes.get(property)
+            current_value_text = (
+                str(current_value) if has_current_value else None
+            )
             if hasattr(self, "grid_layout_container"):
                 font_metrics = QFontMetrics(self.grid_layout_container.font())
             else:
@@ -4306,8 +4455,16 @@ class LabelingWidget(LabelDialog):
             row_counter += 1
 
             if widget_type == "radiobutton":
-                radio_group = QButtonGroup()
+                radio_options = list(options)
+                unknown_radio_value = None
+                if (
+                    has_current_value
+                    and current_value_text not in radio_options
+                ):
+                    unknown_radio_value = current_value_text
+                    radio_options.append(unknown_radio_value)
                 radio_container = QWidget()
+                radio_group = QButtonGroup(radio_container)
                 main_layout = QVBoxLayout()
                 main_layout.setContentsMargins(0, 0, 0, 0)
                 main_layout.setSpacing(2)
@@ -4331,7 +4488,11 @@ class LabelingWidget(LabelDialog):
                     display_text, original_text, prop, shape_idx
                 ):
                     radio_button = QRadioButton(display_text)
-                    if display_text != original_text:
+                    if original_text == unknown_radio_value:
+                        radio_button.setToolTip(
+                            unknown_value_tooltip(original_text)
+                        )
+                    elif display_text != original_text:
                         radio_button.setToolTip(original_text)
                     radio_group.addButton(radio_button)
 
@@ -4345,7 +4506,7 @@ class LabelingWidget(LabelDialog):
                     return radio_button
 
                 buttons_data = []
-                for option in options:
+                for option in radio_options:
                     display_text, original_text = get_truncated_text(
                         option, available_width
                     )
@@ -4420,15 +4581,20 @@ class LabelingWidget(LabelDialog):
                                         )
                                     )
                                     row_layout.addWidget(radio_button)
-                                    if current_value == btn_original or (
-                                        current_value is None
+                                    if current_value_text == btn_original or (
+                                        not has_current_value
                                         and btn_original == options[0]
                                     ):
+                                        blocker = QtCore.QSignalBlocker(
+                                            radio_button
+                                        )
                                         radio_button.setChecked(True)
-                                        if current_value is None:
+                                        del blocker
+                                        if not has_current_value:
                                             update_shape.attributes[
                                                 property
                                             ] = btn_original
+                                            attributes_changed = True
 
                                 row_layout.addStretch()
                                 row_widget = QWidget()
@@ -4455,15 +4621,20 @@ class LabelingWidget(LabelDialog):
                                     )
                                 )
                                 row_layout.addWidget(radio_button)
-                                if current_value == btn_original or (
-                                    current_value is None
+                                if current_value_text == btn_original or (
+                                    not has_current_value
                                     and btn_original == options[0]
                                 ):
+                                    blocker = QtCore.QSignalBlocker(
+                                        radio_button
+                                    )
                                     radio_button.setChecked(True)
-                                    if current_value is None:
+                                    del blocker
+                                    if not has_current_value:
                                         update_shape.attributes[property] = (
                                             btn_original
                                         )
+                                        attributes_changed = True
 
                             row_layout.addStretch()
                             row_widget = QWidget()
@@ -4483,15 +4654,18 @@ class LabelingWidget(LabelDialog):
                             btn_display, btn_original, property, shape_index
                         )
                         row_layout.addWidget(radio_button)
-                        if current_value == btn_original or (
-                            current_value is None
+                        if current_value_text == btn_original or (
+                            not has_current_value
                             and btn_original == options[0]
                         ):
+                            blocker = QtCore.QSignalBlocker(radio_button)
                             radio_button.setChecked(True)
-                            if current_value is None:
+                            del blocker
+                            if not has_current_value:
                                 update_shape.attributes[property] = (
                                     btn_original
                                 )
+                                attributes_changed = True
                     row_layout.addStretch()
                     row_widget = QWidget()
                     row_widget.setLayout(row_layout)
@@ -4512,10 +4686,8 @@ class LabelingWidget(LabelDialog):
                     }
                 )
                 property_combo.addItems(options)
-                if current_value:
-                    index = property_combo.findText(current_value)
-                    if index >= 0:
-                        property_combo.setCurrentIndex(index)
+                if has_current_value:
+                    set_current_combo_value(property_combo, current_value)
                 property_combo.currentIndexChanged.connect(
                     lambda _, prop=property, combo=property_combo, shape_idx=shape_index: self.attribute_selection_changed(
                         shape_idx, prop, combo
@@ -4527,8 +4699,8 @@ class LabelingWidget(LabelDialog):
                 row_counter += 1
             elif widget_type == "lineedit":
                 property_line = QLineEdit()
-                if current_value:
-                    property_line.setText(current_value)
+                if has_current_value:
+                    property_line.setText(current_value_text)
                 property_line.textChanged.connect(
                     lambda _, prop=property, line=property_line, shape_idx=shape_index: self.attribute_line_changed(
                         shape_idx, prop, line
@@ -4539,12 +4711,11 @@ class LabelingWidget(LabelDialog):
             else:
                 property_combo = QComboBox()
                 property_combo.addItems(options)
-                if current_value:
-                    index = property_combo.findText(current_value)
-                    if index >= 0:
-                        property_combo.setCurrentIndex(index)
+                if has_current_value:
+                    set_current_combo_value(property_combo, current_value)
                 else:
                     update_shape.attributes[property] = options[0]
+                    attributes_changed = True
                 property_combo.currentIndexChanged.connect(
                     lambda _, prop=property, combo=property_combo, shape_idx=shape_index: self.attribute_selection_changed(
                         shape_idx, prop, combo
@@ -4561,7 +4732,8 @@ class LabelingWidget(LabelDialog):
         self.scroll_area.setWidgetResizable(True)
         if shape_index < len(self.canvas.shapes):
             self.canvas.shapes[shape_index] = update_shape
-            self.save_attributes(self.canvas.shapes)
+            if attributes_changed:
+                self.save_attributes(self.canvas.shapes)
         self.show_attributes_panel()
 
     def show_attributes_panel(self):
@@ -4579,29 +4751,10 @@ class LabelingWidget(LabelDialog):
             filename = osp.join(self.output_dir, label_file_without_path)
         label_file = LabelFile()
 
-        def format_shape(s):
-            data = s.other_data.copy()
-            info = {
-                "label": s.label,
-                "points": [(p.x(), p.y()) for p in s.points],
-                "group_id": s.group_id,
-                "description": s.description,
-                "difficult": s.difficult,
-                "shape_type": s.shape_type,
-                "flags": s.flags,
-                "attributes": s.attributes,
-                "kie_linking": s.kie_linking,
-            }
-            if s.shape_type == "rotation":
-                info["direction"] = s.direction
-            data.update(info)
-
-            return data
-
         # Get current shapes
         # Excluding auto labeling special shapes
         shapes = [
-            format_shape(shape)
+            shape.to_dict()
             for shape in _shapes
             if shape.label
             not in [
@@ -5246,8 +5399,13 @@ class LabelingWidget(LabelDialog):
                         self.update_attributes(i)
                         break
         else:
-            self.canvas.undo_last_line()
-            self.canvas.shapes_backups.pop()
+            if self.canvas.is_magic_wand_mode:
+                self.canvas.shapes.pop()
+                self.canvas.shapes_backups.pop()
+                self.canvas.update()
+            else:
+                self.canvas.undo_last_line()
+                self.canvas.shapes_backups.pop()
 
     def show_shape(self, shape_height, shape_width, pos):
         """Display annotation width and height while hovering inside.
@@ -5593,30 +5751,21 @@ class LabelingWidget(LabelDialog):
         self.zoom_mode = self.FIT_WIDTH if value else self.MANUAL_ZOOM
         self.adjust_scale()
 
-    def set_cross_line(self):
-        crosshair_dialog = CrosshairSettingsDialog(**self.crosshair_settings)
-        if crosshair_dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
-            crosshair_settings = crosshair_dialog.get_settings()
-            show = crosshair_settings["show"]
-            width = crosshair_settings["width"]
-            color = crosshair_settings["color"]
-            opacity = crosshair_settings["opacity"]
-            self.canvas.set_cross_line(show, width, color, opacity)
-            self._config["canvas"]["crosshair"] = crosshair_settings
-
     def set_canvas_params(self, key, value):
         self._config[key] = value
         assert hasattr(self.canvas, key), f"Canvas has no attribute {key}"
         setattr(self.canvas, key, value)
         self.canvas.update()
 
-    def open_settings_dialog(self):
+    def open_settings_dialog(self, _checked=False, field_key=None):
         if self._settings_controller is None:
             return
         if self._settings_dialog is None:
             self._settings_dialog = SettingsDialog(
                 self, self._settings_controller
             )
+        if field_key is not None:
+            self._settings_dialog.show_field(field_key)
         self._settings_dialog.show()
         self._settings_dialog.raise_()
         self._settings_dialog.activateWindow()
@@ -5631,11 +5780,6 @@ class LabelingWidget(LabelDialog):
         self.canvas.update()
         self.set_dirty()
 
-    def on_new_brightness_contrast(self, qimage):
-        self.canvas.load_pixmap(
-            QtGui.QPixmap.fromImage(qimage), clear_shapes=False
-        )
-
     def _on_shape_opacity_changed(self, value):
         """Update label/shape opacity from the slider value (0-100)."""
         self.canvas.shape_opacity = value / 100.0
@@ -5644,15 +5788,17 @@ class LabelingWidget(LabelDialog):
     def _on_inline_brightness_contrast(self, brightness, contrast):
         """Apply brightness/contrast from the inline adjustment sliders.
 
-        Reuses ``brightness_contrast_dialog`` so 16-bit grayscale handling is
-        shared with the menu-driven dialog. ``dialog.img`` is refreshed on
-        every image load (see ``load_file``).
+        Reuses ``brightness_contrast_processor`` so 16-bit grayscale handling
+        remains supported. The source image is refreshed on every image load.
         """
         if self.image_data is None or self.filename is None:
             return
-        dialog = self.brightness_contrast_dialog
-        dialog.set_values(brightness, contrast)
-        dialog.on_new_value()
+        qimage = self.brightness_contrast_processor.adjust(
+            brightness, contrast
+        )
+        self.canvas.load_pixmap(
+            QtGui.QPixmap.fromImage(qimage), clear_shapes=False
+        )
         self.brightness_contrast_values[self.filename] = (brightness, contrast)
 
     def _position_canvas_adjustment(self):
@@ -5676,27 +5822,6 @@ class LabelingWidget(LabelDialog):
         ):
             self._position_canvas_adjustment()
         return super().eventFilter(obj, event)
-
-    def brightness_contrast(self, _):
-        self.brightness_contrast_dialog.update_image(
-            utils.img_data_to_pil(self.image_data)
-        )
-
-        brightness, contrast = self.brightness_contrast_values.get(
-            self.filename, (None, None)
-        )
-        self.brightness_contrast_dialog.set_values(
-            brightness if brightness is not None else 50,
-            contrast if contrast is not None else 50,
-        )
-
-        self.brightness_contrast_dialog.exec()
-
-        brightness = self.brightness_contrast_dialog.slider_brightness.value()
-        contrast = self.brightness_contrast_dialog.slider_contrast.value()
-        self.brightness_contrast_values[self.filename] = (brightness, contrast)
-        # Keep the inline adjustment sliders in sync with the dialog.
-        self.canvas_adjustment.set_brightness_contrast(brightness, contrast)
 
     def hide_selected_polygons(self):
         shapes_to_hide = []
@@ -5864,6 +5989,13 @@ class LabelingWidget(LabelDialog):
             return False
         self.image = image
         self.filename = filename
+        has_image_tags = IMAGE_TAGS_FIELD in self.other_data
+        self.image_tags_widget.set_tags(
+            self.other_data.get(IMAGE_TAGS_FIELD, [])
+        )
+        self.image_tags_widget.set_interactions_enabled(True)
+        if has_image_tags:
+            self._auto_show_image_tags()
 
         if (
             hasattr(self, "navigator_dialog")
@@ -5897,6 +6029,7 @@ class LabelingWidget(LabelDialog):
                         **shape.flags,
                     }
             self.load_shapes(self.label_file.shapes, update_last_label=False)
+            self.image_tags_widget.refresh_colors()
             if self.label_file.flags is not None:
                 flags.update(self.label_file.flags)
         self.load_flags(flags)
@@ -5938,18 +6071,18 @@ class LabelingWidget(LabelDialog):
                 self.recent_files[0], (None, None)
             )
         self.brightness_contrast_values[self.filename] = (brightness, contrast)
-        # Always refresh the dialog's source image so the inline adjustment
-        # sliders can reuse its brightness/contrast pipeline (which includes
-        # 16-bit grayscale handling).
-        self.brightness_contrast_dialog.update_image(
+        # Always refresh the source image used by the inline adjustment panel.
+        self.brightness_contrast_processor.update_image(
             utils.img_data_to_pil(self.image_data)
         )
-        self.brightness_contrast_dialog.set_values(
-            brightness if brightness is not None else 50,
-            contrast if contrast is not None else 50,
-        )
         if brightness is not None or contrast is not None:
-            self.brightness_contrast_dialog.on_new_value()
+            qimage = self.brightness_contrast_processor.adjust(
+                brightness if brightness is not None else 50,
+                contrast if contrast is not None else 50,
+            )
+            self.canvas.load_pixmap(
+                QtGui.QPixmap.fromImage(qimage), clear_shapes=False
+            )
         # Sync the inline adjustment sliders (50 is the neutral value).
         self.canvas_adjustment.set_brightness_contrast(
             brightness if brightness is not None else 50,
@@ -5975,6 +6108,9 @@ class LabelingWidget(LabelDialog):
     # QT Overload
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:
+            if self.image_tags_widget.cancel_active_mode():
+                event.accept()
+                return
             if getattr(self.canvas, "is_brush_mode", False):
                 self.canvas.cancel_brush_mode()
             elif self.actions.edit_brush_mode.isChecked():
@@ -6033,6 +6169,11 @@ class LabelingWidget(LabelDialog):
     def closeEvent(self, event):
         if not self.may_continue():
             event.ignore()
+        if event.isAccepted() and self.training_dialog is not None:
+            if not self.training_dialog.prepare_for_application_close():
+                event.ignore()
+                return
+            self.training_dialog.close()
         if event.isAccepted() and hasattr(self, "video_classifier_window"):
             if self.video_classifier_window is not None:
                 self.video_classifier_window.close()
@@ -6487,6 +6628,7 @@ class LabelingWidget(LabelDialog):
         return osp.exists(label_file)
 
     def may_continue(self):
+        self.image_tags_widget.finish_for_image_change()
         if not self.dirty:
             return True
         mb = QtWidgets.QMessageBox
@@ -6730,11 +6872,23 @@ class LabelingWidget(LabelDialog):
                 )
                 return
 
+        result_tags = getattr(auto_labeling_result, "tags", None)
+        tags_only_result = (
+            result_tags is not None
+            and not auto_labeling_result.shapes
+            and auto_labeling_result.replace is False
+            and not auto_labeling_result.description
+        )
+        annotations_changed = bool(auto_labeling_result.shapes)
+
         # Clear existing shapes
         if auto_labeling_result.replace:
             locked_shapes = [
                 shape for shape in self.canvas.shapes if shape.locked
             ]
+            annotations_changed |= len(locked_shapes) != len(
+                self.canvas.shapes
+            )
             self.label_list.clear()
             self.load_shapes(
                 locked_shapes + auto_labeling_result.shapes, replace=True
@@ -6750,13 +6904,35 @@ class LabelingWidget(LabelDialog):
         # Set image description
         if auto_labeling_result.description:
             description = auto_labeling_result.description
+            annotations_changed |= description != self.other_data.get(
+                "description", ""
+            )
             self.shape_text_label.setText(self.tr("Image Description"))
             with QtCore.QSignalBlocker(self.shape_text_edit):
                 self.shape_text_edit.setPlainText(description)
             self.other_data["description"] = description
             self.shape_text_edit.setDisabled(False)
 
-        self.set_dirty()
+        tags_changed = False
+        if result_tags is not None:
+            tags = utils.normalize_image_tags(
+                result_tags, "auto labeling result"
+            )
+            tags_changed = (
+                IMAGE_TAGS_FIELD not in self.other_data
+                or self.other_data[IMAGE_TAGS_FIELD] != tags
+            )
+            if tags_changed:
+                self.other_data[IMAGE_TAGS_FIELD] = tags
+            self.image_tags_widget.set_tags(tags)
+            self._auto_show_image_tags()
+
+        if annotations_changed or tags_changed:
+            self.other_data[CHECKED_FIELD] = False
+            self._sync_annotation_checked_state()
+
+        if tags_changed or not tags_only_result:
+            self.set_dirty()
 
     def clear_auto_labeling_marks(self):
         """Clear auto labeling marks from the current image."""
